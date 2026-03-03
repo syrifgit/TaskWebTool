@@ -465,10 +465,10 @@ export default void function (factory) {
                         return;
                     }
                     
-                    if (!uniqueItems.has(item["Display name"])) {
-                        uniqueItems.set(item["Display name"], []);
+                    if (!uniqueItems.has(item["Sold item"])) {
+                        uniqueItems.set(item["Sold item"], []);
                     }
-                    uniqueItems.get(item["Display name"]).push(item);
+                    uniqueItems.get(item["Sold item"]).push(item);
                 });
             }
             
@@ -495,7 +495,7 @@ export default void function (factory) {
                 y: -(marker._storelineItem.position.y >> 6)
             })] || [];
             
-            let hasSelectedItem = this._selectedItem && items.some(item => item["Display name"] === this._selectedItem);
+            let hasSelectedItem = this._selectedItem && items.some(item => item["Sold item"] === this._selectedItem);
             
             if (hasSelectedItem) {
                 marker.setIcon(L.icon({
@@ -528,11 +528,11 @@ export default void function (factory) {
 
             // Filter by display name (case-insensitive)
             let filtered = data.filter(item => {
-                if (!item["Display name"] || !item.position) {
+                if (!item["Sold item"] || !item.position) {
                     return false;
                 }
 
-                let nameLower = item["Display name"].toLowerCase();
+                let nameLower = item["Sold item"].toLowerCase();
                 let nameMatches = isStrict 
                     ? nameLower === searchLower 
                     : nameLower.includes(searchLower);
@@ -684,9 +684,9 @@ export default void function (factory) {
             let itemsHtml = `<div style="${numColumns > 1 ? `column-count: ${numColumns}; column-gap: ${columnGap}px; min-width: ${minWidth}px;` : ''}">`;
             items.forEach(storeItem => {
                 // Check if this item matches the search query
-                let isMatch = storeItem["Display name"] && 
+                let isMatch = storeItem["Sold item"] && 
                              this._searchQuery && 
-                             storeItem["Display name"].toLowerCase().includes(this._searchQuery);
+                             storeItem["Sold item"].toLowerCase().includes(this._searchQuery);
                 
                 let itemStyle = isMatch ? 'background-color: rgba(255,215,0,0.15); border-left: 2px solid #ffd700; padding: 4px; border-radius: 3px;' : '';
                 
@@ -705,11 +705,11 @@ export default void function (factory) {
                 
                 // Add item icon if we found the item ID
                 if (itemId !== null) {
-                    itemsHtml += `<img src="https://raw.githubusercontent.com/runelite/static.runelite.net/refs/heads/gh-pages/cache/item/icon/${itemId}.png" alt="${storeItem["Display name"]}" style="width: 24px; height: 24px;" onerror="this.style.display='none'">`;
+                    itemsHtml += `<img src="https://raw.githubusercontent.com/runelite/static.runelite.net/refs/heads/gh-pages/cache/item/icon/${itemId}.png" alt="${storeItem["Sold item"]}" style="width: 24px; height: 24px;" onerror="this.style.display='none'">`;
                 }
                 
                 itemsHtml += `<div>`;
-                itemsHtml += `<div><b>${storeItem["Display name"]}</b></div>`;
+                itemsHtml += `<div><b>${storeItem["Sold item"]}</b></div>`;
                 if (storeItem["Store sell price"] !== undefined) {
                     itemsHtml += `Sell: ${storeItem["Store sell price"]}, `;
                 }
