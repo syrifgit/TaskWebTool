@@ -976,4 +976,88 @@ export default void function (factory) {
     L.scenery = function (options) {
         return new L.Scenery(options);
     }
+
+    // ── Item Spawns layer ──────────────────────────────────────────────
+    // Loads data_osrs/item_spawns.json and renders all spawns for the
+    // currently enabled regions as gold circle markers.
+    L.ItemSpawns = L.LayerGroup.extend({
+        initialize: function (options) {
+            L.LayerGroup.prototype.initialize.call(this);
+            L.setOptions(this, options);
+            this._allData = null; // cached full JSON
+        },
+
+        onAdd: function (map) {
+            this._map = map;
+            this._loadAndRender();
+        },
+
+        _loadAndRender: async function () {
+            if (!this._allData) {
+                try {
+                    this._allData = await fetch(`${this.options.folder}/item_spawns.json`).then(res => res.json());
+                } catch (e) {
+                    console.error('L.ItemSpawns: failed to load item_spawns.json', e);
+                    return;
+                }
+            }
+            this._renderForRegions(this.options.regions || []);
+        },
+
+        _renderForRegions: function (regions) {
+            this.clearLayers();
+            if (!this._allData) return;
+
+            const regionSet = new Set(regions.map(r => r.toLowerCase()));
+            if (regionSet.size === 0) return;
+
+            this._allData.forEach(item => {
+                if (!item.leagueregion || !item.coordinates || item.coordinates.length === 0) return;
+                if (!item.leagueregion.some(r => regionSet.has(r.toLowerCase()))) return;
+
+                item.coordinates.forEach(coord => {
+                    const marker = L.circleMarker([coord[1] + 0.5, coord[0] + 0.5], {
+                        radius: 5,
+                        fillColor: '#ffd700',
+                        color: '#7a5c00',
+                        weight: 1,
+                        opacity: 0.9,
+                        fillOpacity: 0.7
+                    });
+
+                    const regionLabel = item.leagueregion
+                        .map(r => r.charAt(0).toUpperCase() + r.slice(1))
+                        .join(', ');
+
+                    marker.bindPopup(
+                        `<div class="osrs-popup-inner">` +
+                        `<b><a href="https://oldschool.runescape.wiki/w/${encodeURIComponent(item.page_name.replace(/ /g, '_'))}" target="_blank">${item.page_name}</a></b><br>` +
+                        `<span class="popup-region">Region: ${regionLabel}</span><br>` +
+                        `<span class="popup-coords">x = ${coord[0]}, y = ${coord[1]}</span>` +
+                        `</div>`,
+                        { autoPan: false, className: 'osrs-popup' }
+                    );
+
+                    this.addLayer(marker);
+                });
+            });
+        },
+
+        /** Call this when the active region set changes. */
+        updateRegions: function (regions) {
+            this.options.regions = regions;
+            if (this._map) {
+                this._renderForRegions(regions);
+            }
+        },
+
+        onRemove: function (map) {
+            this.clearLayers();
+            L.LayerGroup.prototype.onRemove.call(this, map);
+        }
+    });
+
+    L.itemSpawns = function (options) {
+        return new L.ItemSpawns(options);
+    }
 });

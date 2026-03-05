@@ -313,6 +313,106 @@ document.getElementById('task-show-general').addEventListener('change', e => {
     renderTasks();
 });
 
+// ── Item spawns toggle ────────────────────────────────────────────
+(function () {
+    const btn = document.getElementById('task-spawns-toggle');
+    if (!btn) return;
+
+    const L   = window.L;
+    let spawnsLayer = null;   // L.layerGroup, created on first show
+    let allSpawnsData = null; // cached JSON
+    let spawnsVisible = false;
+
+    async function loadSpawnsData() {
+        if (allSpawnsData) return allSpawnsData;
+        try {
+            allSpawnsData = await fetch('data_osrs/item_spawns.json').then(r => r.json());
+        } catch (e) {
+            console.error('item_spawns: failed to load', e);
+            allSpawnsData = [];
+        }
+        return allSpawnsData;
+    }
+
+    function buildSpawnsLayer(regions) {
+        if (spawnsLayer) {
+            const map = window.runescape_map;
+            if (map && map.hasLayer(spawnsLayer)) map.removeLayer(spawnsLayer);
+            spawnsLayer = null;
+        }
+        if (!allSpawnsData || regions.length === 0) return;
+
+        const regionSet = new Set(regions.map(r => r.toLowerCase()));
+        spawnsLayer = L.layerGroup();
+
+        allSpawnsData.forEach(item => {
+            if (!item.leagueregion || !item.coordinates || item.coordinates.length === 0) return;
+            if (!item.leagueregion.some(r => regionSet.has(r.toLowerCase()))) return;
+
+            item.coordinates.forEach(coord => {
+                const regionLabel = item.leagueregion
+                    .map(r => r.charAt(0).toUpperCase() + r.slice(1)).join(', ');
+
+                const marker = L.circleMarker([coord[1] + 0.5, coord[0] + 0.5], {
+                    radius: 8,
+                    fillColor: '#cc0000',
+                    color: '#660000',
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.85
+                });
+                marker.bindPopup(
+                    `<div class="osrs-popup-inner">` +
+                    `<b><a href="https://oldschool.runescape.wiki/w/${encodeURIComponent(item.page_name.replace(/ /g, '_'))}" target="_blank">${item.page_name}</a></b><br>` +
+                    `<span class="popup-region">Region: ${regionLabel}</span><br>` +
+                    `<span class="popup-coords">x = ${coord[0]}, y = ${coord[1]}</span>` +
+                    `</div>`,
+                    { autoPan: false, className: 'osrs-popup' }
+                );
+                spawnsLayer.addLayer(marker);
+            });
+        });
+    }
+
+    btn.addEventListener('click', async () => {
+        const map = window.runescape_map;
+        if (!map) return;
+
+        if (spawnsVisible) {
+            if (spawnsLayer && map.hasLayer(spawnsLayer)) map.removeLayer(spawnsLayer);
+            spawnsVisible = false;
+            btn.classList.remove('task-spawns-btn-active');
+            btn.textContent = 'Show Item Spawns';
+        } else {
+            btn.textContent = 'Loading…';
+            btn.disabled = true;
+            await loadSpawnsData();
+            btn.disabled = false;
+            buildSpawnsLayer(currentRegions || []);
+            if (spawnsLayer) spawnsLayer.addTo(map);
+            spawnsVisible = true;
+            btn.classList.add('task-spawns-btn-active');
+            btn.textContent = 'Hide Item Spawns';
+        }
+    });
+
+    // Keep spawns in sync with region changes while visible
+    function onSpawnsRegionChange(regions) {
+        if (!spawnsVisible) return;
+        const map = window.runescape_map;
+        buildSpawnsLayer(regions);
+        if (spawnsLayer && map) spawnsLayer.addTo(map);
+    }
+
+    if (window._regionControl) {
+        window._regionControl.onRegionChange(onSpawnsRegionChange);
+    } else {
+        window.addEventListener('regionControlReady', e => {
+            e.detail.onRegionChange(onSpawnsRegionChange);
+        }, { once: true });
+    }
+})();
+
 // ── Region filter integration ─────────────────────────────────────
 function wireRegionControl(regionControl) {
     currentRegions = regionControl.getEnabledRegions();

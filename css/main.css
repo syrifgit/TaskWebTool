@@ -187,6 +187,33 @@ html, body {
     color: #ff8050;
 }
 
+/* Item spawns toggle button */
+.task-spawns-btn {
+    flex: 0 0 auto;
+    background-color: #1a1400;
+    border: 1px solid #4a3800;
+    border-radius: 4px;
+    color: #a89060;
+    font-size: 12px;
+    font-weight: bold;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+    text-align: center;
+    margin-top: 4px;
+}
+.task-spawns-btn:hover {
+    background-color: #2a2000;
+    border-color: #8a6a00;
+    color: #ffd700;
+}
+.task-spawns-btn-active {
+    background-color: #2a2000;
+    border-color: #ffd700;
+    color: #ffd700;
+    box-shadow: 0 0 6px rgba(255, 215, 0, 0.25);
+}
+
 #task-panel-stats {
     flex: 0 0 auto;
     padding: 6px 10px;
