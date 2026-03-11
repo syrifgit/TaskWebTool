@@ -30,6 +30,8 @@ function tierFor(points) {
     return TIERS.find(t => (points || 0) >= t.min) || TIERS[TIERS.length - 1];
 }
 
+const VIRTUAL_COLOR = '#00cccc'; // teal – visually distinct from all tier colours
+
 // ─── State ────────────────────────────────────────────────────────
 let plannerItems = [];   // [{ id, taskName, pinCoords:{lat,lng}|null, comments:[] }]
 let allTasksRef  = [];   // mirror of allTasks from leaflet.tasks.js
@@ -108,23 +110,26 @@ function redrawMapOverlays() {
     plannerPinsLayer = L.layerGroup();
 
     pinned.forEach(({ item, idx, task }) => {
-        const pts   = task ? (task.points || 10) : 10;
-        const tier  = tierFor(pts);
+        const isVirtual = !!item.virtual;
+        const pts   = isVirtual ? 0 : (task ? (task.points || 10) : 10);
+        const tier  = isVirtual ? { name: 'Custom step', color: VIRTUAL_COLOR } : tierFor(pts);
+        const displayName = isVirtual ? (item.customName || 'Unnamed step') : (task ? task.name : item.taskName);
+        const displayDesc = isVirtual ? (item.customDesc || '') : (task ? task.task : '');
         const icon  = makePinIcon(tier.color, idx + 1);
         if (!icon) return;
 
         const commentsHtml = item.comments.length
-            ? '<ul style="margin:4px 0 0 0;padding-left:16px;color:#c8b880;">' +
-              item.comments.map(c => `<li>${esc(c)}</li>`).join('') + '</ul>'
+            ? '<ul style="margin:4px 0 0 0;padding-left:16px;color:#c8b880;">'
+              + item.comments.map(c => `<li>${esc(c)}</li>`).join('') + '</ul>'
             : '';
 
         const marker = L.marker([item.pinCoords.lat, item.pinCoords.lng], { icon, zIndexOffset: 200 });
         marker.bindPopup(
             `<div class="osrs-popup-inner">` +
-            `<b>#${idx + 1} ${esc(task ? task.name : item.taskName)}</b><br>` +
+            `<b>#${idx + 1} ${esc(displayName)}</b><br>` +
             `<span style="color:${tier.color};font-weight:bold;">${tier.name}</span>` +
-            ` · <span style="color:#e8d5a0;">${pts} pts</span><br>` +
-            (task ? `<span style="color:#c8b880;">${esc(task.task)}</span>` : '') +
+            (isVirtual ? '' : ` · <span style="color:#e8d5a0;">${pts} pts</span>`) + `<br>` +
+            (displayDesc ? `<span style="color:#c8b880;">${esc(displayDesc)}</span>` : '') +
             commentsHtml +
             `</div>`,
             { autoPan: false, className: 'osrs-popup' }
@@ -238,6 +243,7 @@ function renderPlanner() {
     ctrl.className = 'planner-controls';
     const pinnedCount = plannerItems.filter(i => i.pinCoords).length;
     let runningTotal = plannerItems.reduce((s, i) => {
+        if (i.virtual) return s;
         const t = getTask(i.taskName);
         return s + (t ? (t.points || 10) : 10);
     }, 0);
@@ -283,8 +289,8 @@ function renderPlanner() {
         // Running point total
         let runPts = 0;
         plannerItems.forEach((item, idx) => {
-            const task = getTask(item.taskName);
-            const pts  = task ? (task.points || 10) : 10;
+            const task = item.virtual ? null : getTask(item.taskName);
+            const pts  = item.virtual ? 0 : (task ? (task.points || 10) : 10);
             runPts += pts;
             container.appendChild(buildPlannerCard(item, task, pts, runPts, idx));
 
@@ -344,11 +350,12 @@ function wireExternalDrop(el, insertIdx) {
 }
 
 function buildPlannerCard(item, task, pts, runPts, idx) {
-    const tier  = tierFor(pts);
+    const isVirtual = !!item.virtual;
+    const tier  = isVirtual ? { name: 'Custom step', color: VIRTUAL_COLOR } : tierFor(pts);
     const color = tier.color;
 
     const card = document.createElement('div');
-    card.className = 'planner-card';
+    card.className = 'planner-card' + (isVirtual ? ' planner-card-virtual' : '');
     if (plannerSelectedId === item.id) card.classList.add('planner-card-selected');
     card.dataset.id   = item.id;
     card.draggable    = true;
@@ -367,17 +374,24 @@ function buildPlannerCard(item, task, pts, runPts, idx) {
           ).join('')
         : '';
 
+    const headerMiddle = isVirtual
+        ? `<span class="planner-virtual-badge">custom</span>` +
+          `<input class="planner-virtual-name" value="${esc(item.customName || '')}" placeholder="Step name..." data-id="${item.id}"/>`
+        : `<span class="planner-card-name">${esc(task ? task.name : item.taskName)}</span>` +
+          `<span class="planner-card-pts" style="color:${color}">${pts} pts</span>`;
+
     card.innerHTML =
         `<div class="planner-card-header">` +
             `<span class="planner-drag-handle" title="Drag to reorder">⠿</span>` +
             `<span class="planner-order-num">${idx + 1}</span>` +
-            `<span class="planner-tier-dot" style="background:${color}" title="${tier.name} (${pts} pts)"></span>` +
-            `<span class="planner-card-name">${esc(task ? task.name : item.taskName)}</span>` +
-            `<span class="planner-card-pts" style="color:${color}">${pts} pts</span>` +
+            `<span class="planner-tier-dot" style="background:${color}" title="${tier.name}${isVirtual ? '' : ` (${pts} pts)`}"></span>` +
+            headerMiddle +
             `<span class="planner-running-pts" title="Running total">${runPts} pts</span>` +
             `<button class="planner-remove-btn" data-id="${item.id}" title="Remove from planner">✕</button>` +
         `</div>` +
-        (task ? `<div class="planner-card-desc">${esc(task.task)}</div>` : '') +
+        (isVirtual
+            ? `<input class="planner-virtual-desc" value="${esc(item.customDesc || '')}" placeholder="Description (optional)..." data-id="${item.id}"/>`
+            : (task ? `<div class="planner-card-desc">${esc(task.task)}</div>` : '')) +
         `<div class="planner-card-pin-row">` +
             `<button class="planner-pin-btn${item.pinCoords ? ' planner-pin-set' : ''}" data-id="${item.id}">${pinLabel}</button>` +
             (item.pinCoords ? `<button class="planner-pin-clear-btn" data-id="${item.id}" title="Clear pin">✕</button>` : '') +
@@ -387,6 +401,24 @@ function buildPlannerCard(item, task, pts, runPts, idx) {
             `<input class="planner-comment-input" type="text" placeholder="Add step/note..." data-id="${item.id}" autocomplete="off"/>` +
             `<button class="planner-comment-add-btn" data-id="${item.id}">＋</button>` +
         `</div>`;
+
+    // ── Virtual name/desc inline editing ────────────────────────
+    if (isVirtual) {
+        const nameInput = card.querySelector('.planner-virtual-name');
+        const descInput = card.querySelector('.planner-virtual-desc');
+        const saveVirtual = () => {
+            item.customName = nameInput.value.trim();
+            item.customDesc = descInput.value.trim();
+            savePlanner();
+            redrawMapOverlays();
+        };
+        nameInput.addEventListener('blur', saveVirtual);
+        nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); nameInput.blur(); } });
+        nameInput.addEventListener('click', e => e.stopPropagation());
+        descInput.addEventListener('blur', saveVirtual);
+        descInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); descInput.blur(); } });
+        descInput.addEventListener('click', e => e.stopPropagation());
+    }
 
     // ── Drag (internal reorder) ──────────────────────────────────
     card.addEventListener('dragstart', e => {
@@ -473,10 +505,18 @@ function buildAddSection() {
     const wrap = document.createElement('div');
     wrap.className = 'planner-add-section';
     wrap.innerHTML =
-        `<div class="planner-add-label">Add tasks to planner:</div>` +
+        `<div class="planner-add-label">Add league tasks:</div>` +
         `<input id="planner-search-input" class="planner-search-input" type="text" placeholder="Search tasks..." autocomplete="off"/>` +
-        `<div id="planner-search-results" class="planner-search-results"></div>`;
+        `<div id="planner-search-results" class="planner-search-results"></div>` +
+        `<div class="planner-add-divider"></div>` +
+        `<div class="planner-add-label">Add custom step:</div>` +
+        `<div class="planner-virtual-create-row">` +
+            `<input id="planner-virtual-name-input" class="planner-search-input" type="text" placeholder="Step name (e.g. Buy stew from shop)" autocomplete="off"/>` +
+            `<input id="planner-virtual-desc-input" class="planner-search-input planner-virtual-desc-input" type="text" placeholder="Description (optional)" autocomplete="off"/>` +
+            `<button id="planner-virtual-add-btn" class="planner-virtual-add-btn">+ Add custom step</button>` +
+        `</div>`;
 
+    // ── League task search ────────────────────────────────────────
     const input   = wrap.querySelector('#planner-search-input');
     const results = wrap.querySelector('#planner-search-results');
 
@@ -531,6 +571,31 @@ function buildAddSection() {
             results.appendChild(row);
         });
     });
+
+    // ── Custom step creation ──────────────────────────────────────
+    const virtualNameInput = wrap.querySelector('#planner-virtual-name-input');
+    const virtualDescInput = wrap.querySelector('#planner-virtual-desc-input');
+    const virtualAddBtn    = wrap.querySelector('#planner-virtual-add-btn');
+    const createVirtualStep = () => {
+        const name = virtualNameInput.value.trim();
+        if (!name) { virtualNameInput.focus(); return; }
+        plannerItems.push({
+            id: genId(),
+            virtual: true,
+            customName: name,
+            customDesc: virtualDescInput.value.trim(),
+            pinCoords: null,
+            comments: []
+        });
+        virtualNameInput.value = '';
+        virtualDescInput.value = '';
+        savePlanner();
+        redrawMapOverlays();
+        renderPlanner();
+    };
+    virtualAddBtn.addEventListener('click', createVirtualStep);
+    virtualNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') createVirtualStep(); });
+    virtualDescInput.addEventListener('keydown', e => { if (e.key === 'Enter') createVirtualStep(); });
 
     return wrap;
 }

@@ -908,6 +908,90 @@ img.huechange { filter: hue-rotate(120deg); }
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
+
+/* Divider between search and custom step sections */
+.planner-add-divider {
+    height: 1px;
+    background-color: #3a2800;
+    margin: 10px 0 8px;
+}
+
+/* Custom step create form */
+.planner-virtual-create-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.planner-virtual-desc-input { margin-top: 0; }
+.planner-virtual-add-btn {
+    align-self: flex-start;
+    background-color: #003a3a;
+    border: 1px solid #00cccc;
+    border-radius: 3px;
+    color: #00cccc;
+    font-size: 12px;
+    font-weight: bold;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+}
+.planner-virtual-add-btn:hover { background-color: #005555; color: #fff; }
+
+/* Virtual task cards */
+.planner-card-virtual {
+    background-color: #001c1c;
+    border-color: #005555;
+}
+.planner-card-virtual:hover { background-color: #002a2a; }
+
+.planner-virtual-badge {
+    flex: 0 0 auto;
+    font-size: 9px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #00cccc;
+    background-color: #003a3a;
+    border: 1px solid #00cccc;
+    border-radius: 8px;
+    padding: 1px 5px;
+    white-space: nowrap;
+}
+
+/* Inline editable name on virtual card */
+.planner-virtual-name {
+    flex: 1 1 auto;
+    background: transparent;
+    border: none;
+    border-bottom: 1px dashed #005555;
+    color: #00cccc;
+    font-size: 13px;
+    font-weight: bold;
+    outline: none;
+    padding: 0 2px;
+    min-width: 0;
+    transition: border-color 0.15s;
+}
+.planner-virtual-name:focus { border-bottom-color: #00cccc; background-color: rgba(0,204,204,0.05); }
+.planner-virtual-name::placeholder { color: #005555; }
+
+/* Inline editable description on virtual card */
+.planner-virtual-desc {
+    width: 100%;
+    box-sizing: border-box;
+    background: transparent;
+    border: none;
+    border-bottom: 1px dashed #003a3a;
+    color: #7acccc;
+    font-size: 12px;
+    outline: none;
+    padding: 2px 2px 2px 22px;
+    margin-bottom: 4px;
+    transition: border-color 0.15s;
+}
+.planner-virtual-desc:focus { border-bottom-color: #00cccc; background-color: rgba(0,204,204,0.04); }
+.planner-virtual-desc::placeholder { color: #003a3a; }
+
 .planner-search-input {
     width: 100%;
     box-sizing: border-box;
