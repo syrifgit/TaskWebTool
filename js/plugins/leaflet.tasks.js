@@ -183,11 +183,16 @@ function buildCard(task, isCompleted) {
             `<input type="checkbox" class="task-card-checkbox" data-name="${escHtml(task.name)}" ${isCompleted ? 'checked' : ''} />` +
         `</label>`;
 
+    const planBtnHtml = !isCompleted
+        ? `<button class="task-card-plan-btn" data-name="${escHtml(task.name)}" onclick="event.stopPropagation();" title="Add to planner">📋</button>`
+        : '';
+
     card.innerHTML =
         `<div class="task-card-header">` +
             checkboxHtml +
             `<div class="task-card-name">${escHtml(task.name)}</div>` +
             `<div class="task-card-points">${escHtml(task.points)} pts</div>` +
+            planBtnHtml +
         `</div>` +
         `<div class="task-card-desc">${escHtml(task.task)}</div>` +
         reqHtml +
@@ -197,6 +202,20 @@ function buildCard(task, isCompleted) {
             (pointsStr  ? `<span class="task-card-strategy-hint">📍 ${parseStrategyPoints(pointsStr).length} pin(s)</span>` : '') +
             `<span class="task-card-completion">${escHtml(task.completion)} players</span>` +
         `</div>`;
+
+    // Plan button
+    if (!isCompleted) {
+        card.querySelector('.task-card-plan-btn')?.addEventListener('click', e => {
+            e.stopPropagation();
+            if (window._plannerAddTask) window._plannerAddTask(task.name);
+        });
+        // Make active cards draggable into the planner
+        card.draggable = true;
+        card.addEventListener('dragstart', e => {
+            e.dataTransfer.effectAllowed = 'copy';
+            e.dataTransfer.setData('text/plain', task.name);
+        });
+    }
 
     // Checkbox toggle
     card.querySelector('.task-card-checkbox').addEventListener('change', e => {
@@ -416,6 +435,7 @@ document.getElementById('task-show-general').addEventListener('change', e => {
 // ── Region filter integration ─────────────────────────────────────
 function wireRegionControl(regionControl) {
     currentRegions = regionControl.getEnabledRegions();
+    window._getCurrentRegions = () => currentRegions;
     regionControl.onRegionChange(regions => {
         currentRegions = regions;
         renderTasks();
@@ -443,6 +463,8 @@ async function init() {
     }
     updateTabBadges();
     renderTasks();
+    // Expose tasks globally for the planner plugin
+    window._allTasksRef = allTasks;
 }
 
 init();

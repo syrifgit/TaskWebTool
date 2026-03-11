@@ -26,6 +26,7 @@
 	<script type="module" src="js/layers.js"></script>
 	<script type="module" src="js/main/main_osrs.js"></script>
 	<script type="module" src="js/plugins/leaflet.tasks.js"></script>
+	<script type="module" src="js/plugins/leaflet.planner.js"></script>
 	
 	</head>
   <body>
@@ -38,6 +39,7 @@
           <div id="task-panel-tabs">
             <button class="task-tab task-tab-active" data-tab="active">Active</button>
             <button class="task-tab" data-tab="completed">Completed</button>
+            <button class="task-tab" data-tab="planner">Planner</button>
           </div>
           <input id="task-search" type="text" placeholder="Search tasks..." autocomplete="off" />
           <label id="task-general-toggle">
@@ -48,6 +50,10 @@
         </div>
         <div id="task-panel-stats"></div>
         <div id="task-list"></div>
+        <div id="planner-container" style="display:none;">
+          <div id="planner-status" class="planner-status-banner" style="display:none;"></div>
+          <div id="planner-list"></div>
+        </div>
       </div>
     </div>
   </body>
