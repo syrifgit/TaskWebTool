@@ -1225,6 +1225,78 @@ export default void function (factory) {
     L.control.display.unifiedSearch = function (options) {
         return new L.Control.Display.UnifiedSearch(options);
     }
-	
-	
+
+    // ── All Shops toggle button ───────────────────────────────────
+    L.Control.AllShopsToggle = L.Control.extend({
+        options: {
+            position: 'bottomleft',
+            folder: 'data_osrs',
+            title: 'Toggle all shop locations',
+        },
+
+        onAdd: function (map) {
+            this._map = map;
+            this._active = false;
+            this._layer = null;
+
+            let container = L.DomUtil.create('div', 'leaflet-control-allshops leaflet-bar');
+            let btn = L.DomUtil.create('a', 'leaflet-control-allshops-btn', container);
+            btn.href = '#';
+            btn.title = this.options.title;
+            btn.setAttribute('role', 'button');
+            btn.setAttribute('aria-label', this.options.title);
+
+            let img = L.DomUtil.create('img', 'leaflet-control-allshops-icon', btn);
+            img.src = 'images/General_store_icon.png';
+            img.alt = 'Shops';
+            img.style.cssText = 'width: 20px; height: 20px; display: block; image-rendering: pixelated;';
+            img.onerror = () => { img.remove(); btn.textContent = '🏪'; };
+
+            L.DomEvent.on(btn, 'click', (e) => {
+                L.DomEvent.preventDefault(e);
+                this.toggle();
+            });
+            L.DomEvent.disableClickPropagation(container);
+
+            if (this.options.regionControl) {
+                this.options.regionControl.onRegionChange(() => {
+                    if (this._active) this._loadShops();
+                });
+            }
+
+            this._btn = btn;
+            return container;
+        },
+
+        toggle: function () {
+            if (this._active) {
+                this._active = false;
+                this._btn.classList.remove('is-active');
+                if (this._layer) { this._layer.remove(); this._layer = null; }
+            } else {
+                this._active = true;
+                this._btn.classList.add('is-active');
+                this._loadShops();
+            }
+        },
+
+        _loadShops: function () {
+            if (this._layer) { this._layer.remove(); this._layer = null; }
+            const regions = this.options.regionControl ? this.options.regionControl.getEnabledRegions() : [];
+            this._layer = L.allShops({
+                folder: this.options.folder,
+                regions: regions
+            }).addTo(this._map);
+        },
+
+        onRemove: function (map) {
+            if (this._layer) { this._layer.remove(); this._layer = null; }
+        }
+    });
+
+    L.control.allShopsToggle = function (options) {
+        return new L.Control.AllShopsToggle(options);
+    };
+
+
  });

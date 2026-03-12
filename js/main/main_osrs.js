@@ -51,6 +51,13 @@ void function (global) {
     // Expose for task panel strategy
     window._unifiedSearch = unifiedSearch;
 
+    // All shops toggle button
+    L.control.allShopsToggle({
+        folder: 'data_osrs',
+        regionControl: regionControl,
+        position: 'bottomleft'
+    }).addTo(runescape_map);
+
     // Explv tiles — coordinate mapping from CRS.Simple to Explv's tile paths:
     //   ez = clamp(tz+6, 4, 11),  offsets: x_origin=960, y_origin=1216
     // NOTE: minNativeZoom MUST be 2. The Explv offsets (960, 1216) are only

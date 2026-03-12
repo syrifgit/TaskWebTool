@@ -732,6 +732,127 @@ export default void function (factory) {
         return new L.Storeline(options);
     }
 
+    // ── All Shops layer — one marker per unique shop location ────
+    L.AllShops = L.LayerGroup.extend({
+        initialize: function (options) {
+            L.LayerGroup.prototype.initialize.call(this);
+            L.setOptions(this, options);
+        },
+
+        onAdd: function (map) {
+            L.LayerGroup.prototype.onAdd.call(this, map);
+            this._map = map;
+            Promise.all([
+                fetch(`${this.options.folder}/names.json`).then(r => r.json()),
+                fetch(`${this.options.folder}/storeline.json`).then(r => r.json())
+            ]).then(([names, data]) => {
+                if (!this._map) return;
+                this._names = names;
+                this._createMarkers(data);
+            }).catch(console.error);
+        },
+
+        _createMarkers: function (data) {
+            const regionFilter = Array.isArray(this.options.regions) && this.options.regions.length > 0
+                ? new Set(this.options.regions)
+                : null;
+
+            // Group rows by unique shop+location key
+            const shopGroups = new Map();
+            data.forEach(item => {
+                if (!item['Sold by'] || !item.position) return;
+                if (regionFilter && !regionFilter.has(item.LeagueRegion)) return;
+                const pos = item.position;
+                const key = `${item['Sold by']}||${pos.x}||${pos.y}||${pos.plane}`;
+                if (!shopGroups.has(key)) shopGroups.set(key, { representative: item, items: [] });
+                shopGroups.get(key).items.push(item);
+            });
+
+            const icon = L.icon({
+                iconUrl: 'images/marker-icon.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+
+            shopGroups.forEach(({ representative, items }) => {
+                const pos = representative.position;
+                const marker = L.marker([pos.y + 0.5, pos.x + 0.5], { icon });
+
+                const textContainer = document.createElement('div');
+                textContainer.style.minWidth = '200px';
+                textContainer.style.width = 'fit-content';
+                const container = document.createElement('div');
+                container.appendChild(textContainer);
+
+                marker.bindPopup(container, {
+                    autoPan: false,
+                    maxWidth: 1000,
+                    minWidth: 200,
+                    className: 'osrs-popup storeline-popup-wide'
+                });
+
+                marker.on('popupopen', () => this._populatePopup(textContainer, items));
+                this.addLayer(marker);
+            });
+        },
+
+        _populatePopup: function (textContainer, items) {
+            textContainer.innerHTML = '';
+            const itemsPerColumn = 5;
+            const numColumns = Math.ceil(items.length / itemsPerColumn);
+            const minWidth = numColumns > 1 ? Math.min(numColumns * 250, 1000) : 200;
+            textContainer.style.minWidth = `${minWidth}px`;
+
+            let textfield = '';
+            const shopName = items[0]['Sold by'];
+            if (shopName) {
+                const wikiUrl = `https://oldschool.runescape.wiki/w/${shopName.replace(/ /g, '_')}`;
+                textfield += `<b><a href="${wikiUrl}" target="_blank">${shopName}</a></b><br>`;
+            }
+            if (items[0].Location) textfield += `<span class="popup-region">Location: ${items[0].Location}</span><br>`;
+            if (items[0].LeagueRegion) textfield += `<span class="popup-region">Region: ${items[0].LeagueRegion}</span><br>`;
+            const pos = items[0].position;
+            textfield += `<span class="popup-coords">x = ${pos.x}, y = ${pos.y}, plane = ${pos.plane}</span><br>`;
+            textfield += `<br><b>Items (${items.length}):</b><br>`;
+
+            let itemsHtml = `<div style="${numColumns > 1 ? `column-count: ${numColumns}; column-gap: 10px; min-width: ${minWidth}px;` : ''}">`;
+            items.forEach(storeItem => {
+                let itemId = null;
+                if (this._names) {
+                    for (let id in this._names) {
+                        if (this._names[id].toLowerCase() === storeItem['Sold item'].toLowerCase()) {
+                            itemId = id;
+                            break;
+                        }
+                    }
+                }
+                itemsHtml += `<div style="display: flex; align-items: center; gap: 8px; margin: 4px 0; break-inside: avoid;">`;
+                if (itemId !== null) {
+                    itemsHtml += `<img src="https://raw.githubusercontent.com/runelite/static.runelite.net/refs/heads/gh-pages/cache/item/icon/${itemId}.png" alt="${storeItem['Sold item']}" style="width: 24px; height: 24px;" onerror="this.style.display='none'">`;
+                }
+                itemsHtml += `<div><div><b>${storeItem['Sold item']}</b></div>`;
+                if (storeItem['Store sell price'] !== undefined) itemsHtml += `Sell: ${storeItem['Store sell price']}, `;
+                if (storeItem['Store buy price'] !== undefined) itemsHtml += `Buy: ${storeItem['Store buy price']}, `;
+                if (storeItem['Store stock']) itemsHtml += `Stock: ${storeItem['Store stock']}`;
+                itemsHtml += `</div></div>`;
+            });
+            itemsHtml += `</div>`;
+            textfield += itemsHtml;
+            textContainer.innerHTML = textfield;
+        },
+
+        onRemove: function (map) {
+            this.clearLayers();
+            L.LayerGroup.prototype.onRemove.call(this, map);
+        }
+    });
+
+    L.allShops = function (options) {
+        return new L.AllShops(options);
+    };
+
     L.NPCs = L.LayerGroup.extend({
         initialize: function (options) {
             L.LayerGroup.prototype.initialize.call(this);
