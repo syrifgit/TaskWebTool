@@ -134,9 +134,10 @@ async function loadSuggestedClusters(task) {
     const regions = window._regionControl ? window._regionControl.getEnabledRegions() : [];
     const regionSet = regions.length > 0 ? new Set(regions.map(r => r.toLowerCase())) : null;
 
-    const [monsters, spawns] = await Promise.all([
+    const [monsters, spawns, scenery] = await Promise.all([
         _plannerFetchJson('data_osrs/monsters.json'),
         _plannerFetchJson('data_osrs/item_spawns.json'),
+        _plannerFetchJson('data_osrs/scenery.json'),
     ]);
 
     const allCoords = [];
@@ -154,6 +155,7 @@ async function loadSuggestedClusters(task) {
     }
     extract(monsters);
     extract(spawns);
+    extract(scenery);
 
     return clusterCoords(allCoords);
 }
