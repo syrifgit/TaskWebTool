@@ -1137,6 +1137,9 @@ function buildAddSection() {
             if (existingTaskNames.has(t.name)) return false;
             const hay = `${t.name} ${t.task} ${t.area || ''}`.toLowerCase();
             return hay.includes(q);
+        }).sort((a, b) => {
+            const pct = s => parseFloat((s && s.completion || '0').replace('%', '')) || 0;
+            return pct(b) - pct(a);
         }).slice(0, 200);
 
         if (matches.length === 0) {
@@ -1153,6 +1156,7 @@ function buildAddSection() {
                 `<span class="planner-search-tier-dot" style="background:${tier.color}"></span>` +
                 `<span class="planner-search-result-name">${esc(task.name)}</span>` +
                 `<span class="planner-search-result-pts" style="color:${tier.color}">${task.points} pts</span>` +
+                `<span class="planner-search-result-completion" title="Player completion rate">${task.completion || ''}</span>` +
                 `<button class="planner-search-add-btn">+ Add</button>`;
 
             row.querySelector('.planner-search-add-btn').addEventListener('click', () => {

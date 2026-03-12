@@ -1232,6 +1232,14 @@ img.huechange { filter: hue-rotate(120deg); }
     font-weight: bold;
     white-space: nowrap;
 }
+.planner-search-result-completion {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: #7aaa60;
+    white-space: nowrap;
+    min-width: 38px;
+    text-align: right;
+}
 .planner-search-add-btn {
     flex: 0 0 auto;
     background-color: #2a1f00;
