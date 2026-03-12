@@ -40,8 +40,16 @@ export default void function (factory) {
         },
 
         getData: async function (name) {
-            let data = await fetch(`${this.options.folder}/item_spawns.json`)
-                .then(res => res.json(), _ => { throw new Error(`Unable to fetch ${this.options.folder}/item_spawns.json`); });
+            let [data, names] = await Promise.all([
+                fetch(`${this.options.folder}/item_spawns.json`)
+                    .then(res => res.json(), _ => { throw new Error(`Unable to fetch ${this.options.folder}/item_spawns.json`); }),
+                fetch(`${this.options.folder}/names.json`)
+                    .then(res => res.json(), _ => null)
+            ]);
+
+            if (names) {
+                this._names = names;
+            }
 
             let hasRegionFilter = Array.isArray(this.options.regions);
             let regionFilter = hasRegionFilter && this.options.regions.length > 0
@@ -68,21 +76,44 @@ export default void function (factory) {
         createMarkers: function (data) {
             data.forEach(item => {
                 if (item.coordinates && item.coordinates.length > 0) {
+                    // Reverse-lookup item ID from names mapping for icon display
+                    // Pick the lowest numeric ID when multiple IDs share the same name
+                    let itemId = null;
+                    if (this._names) {
+                        let nameLower = item.page_name.toLowerCase();
+                        for (let id in this._names) {
+                            if (this._names[id].toLowerCase() === nameLower) {
+                                if (itemId === null || +id < +itemId) itemId = id;
+                            }
+                        }
+                    }
+
+                    const fallbackHtml = `<div class="item-spawn-icon-fallback"></div>`;
+                    let iconHtml = itemId !== null
+                        ? `<img src="https://raw.githubusercontent.com/runelite/static.runelite.net/refs/heads/gh-pages/cache/item/icon/${itemId}.png" alt="${item.page_name}" class="item-spawn-icon-img" onerror="this.outerHTML='${fallbackHtml}'">`
+                        : fallbackHtml;
+
+                    let divIcon = L.divIcon({
+                        html: iconHtml,
+                        className: 'item-spawn-icon',
+                        iconAnchor: [0, 0],
+                        popupAnchor: [0, -18],
+                    });
+
                     item.coordinates.forEach(coord => {
-                        let marker = L.circleMarker([coord[1] + 0.5, coord[0] + 0.5], {
-                            radius: 8,
-                            fillColor: '#cc0000',
-                            color: '#660000',
-                            weight: 1,
-                            opacity: 1,
-                            fillOpacity: 0.85
-                        });
-                        let popupContent = `<div class="osrs-popup-inner">`;
+                        let marker = L.marker([coord[1] + 0.5, coord[0] + 0.5], { icon: divIcon });
+
+                        let popupContent = `<div class="osrs-popup-inner" style="display: flex; align-items: center; gap: 8px;">`;
+                        if (itemId !== null) {
+                            popupContent += `<img src="https://raw.githubusercontent.com/runelite/static.runelite.net/refs/heads/gh-pages/cache/item/icon/${itemId}.png" alt="${item.page_name}" style="width: 36px; height: 36px; image-rendering: pixelated;" onerror="this.style.display='none'">`;
+                        }
+                        popupContent += `<div>`;
                         popupContent += `<b><a href="https://oldschool.runescape.wiki/w/${item.page_name.replace(/ /g, '_')}" target="_blank">${item.page_name}</a></b> <span class="popup-ground-spawn">(Ground spawn)</span><br>`;
                         if (item.leagueregion && item.leagueregion.length > 0) {
                             popupContent += `<span class="popup-region">Regions: ${item.leagueregion.map(r => r.charAt(0).toUpperCase() + r.slice(1)).join(', ')}</span><br>`;
                         }
-                        popupContent += `<span class="popup-coords">x = ${coord[0]}, y = ${coord[1]}</span><br></div>`;
+                        popupContent += `<span class="popup-coords">x = ${coord[0]}, y = ${coord[1]}</span><br>`;
+                        popupContent += `</div></div>`;
                         marker.bindPopup(popupContent, { autoPan: false, className: 'osrs-popup' });
                         this.addLayer(marker);
                     });

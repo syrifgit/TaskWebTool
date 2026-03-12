@@ -340,12 +340,16 @@ document.getElementById('task-show-general').addEventListener('change', e => {
     const L   = window.L;
     let spawnsLayer = null;   // L.layerGroup, created on first show
     let allSpawnsData = null; // cached JSON
+    let allNamesData = null;  // cached names map (id -> name)
     let spawnsVisible = false;
 
     async function loadSpawnsData() {
         if (allSpawnsData) return allSpawnsData;
         try {
-            allSpawnsData = await fetch('data_osrs/item_spawns.json').then(r => r.json());
+            [allSpawnsData, allNamesData] = await Promise.all([
+                fetch('data_osrs/item_spawns.json').then(r => r.json()),
+                fetch('data_osrs/names.json').then(r => r.json()).catch(() => null)
+            ]);
         } catch (e) {
             console.error('item_spawns: failed to load', e);
             allSpawnsData = [];
@@ -364,30 +368,50 @@ document.getElementById('task-show-general').addEventListener('change', e => {
         const regionSet = new Set(regions.map(r => r.toLowerCase()));
         spawnsLayer = L.layerGroup();
 
+        // Build reverse name->id lookup once, keeping the lowest numeric ID per name
+        const nameToId = {};
+        if (allNamesData) {
+            for (const id in allNamesData) {
+                const key = allNamesData[id].toLowerCase();
+                if (!(key in nameToId) || +id < +nameToId[key]) nameToId[key] = id;
+            }
+        }
+
+        const fallbackHtml = `<div class="item-spawn-icon-fallback"></div>`;
+
         allSpawnsData.forEach(item => {
             if (!item.leagueregion || !item.coordinates || item.coordinates.length === 0) return;
             if (!item.leagueregion.some(r => regionSet.has(r.toLowerCase()))) return;
 
-            item.coordinates.forEach(coord => {
-                const regionLabel = item.leagueregion
-                    .map(r => r.charAt(0).toUpperCase() + r.slice(1)).join(', ');
+            const regionLabel = item.leagueregion
+                .map(r => r.charAt(0).toUpperCase() + r.slice(1)).join(', ');
 
-                const marker = L.circleMarker([coord[1] + 0.5, coord[0] + 0.5], {
-                    radius: 8,
-                    fillColor: '#cc0000',
-                    color: '#660000',
-                    weight: 1,
-                    opacity: 1,
-                    fillOpacity: 0.85
-                });
-                marker.bindPopup(
-                    `<div class="osrs-popup-inner">` +
-                    `<b><a href="https://oldschool.runescape.wiki/w/${encodeURIComponent(item.page_name.replace(/ /g, '_'))}" target="_blank">${item.page_name}</a></b><br>` +
-                    `<span class="popup-region">Region: ${regionLabel}</span><br>` +
-                    `<span class="popup-coords">x = ${coord[0]}, y = ${coord[1]}</span>` +
-                    `</div>`,
-                    { autoPan: false, className: 'osrs-popup' }
-                );
+            const itemId = nameToId[item.page_name.toLowerCase()] ?? null;
+            const iconHtml = itemId !== null
+                ? `<img src="https://raw.githubusercontent.com/runelite/static.runelite.net/refs/heads/gh-pages/cache/item/icon/${itemId}.png" alt="${item.page_name}" class="item-spawn-icon-img" onerror="this.outerHTML='${fallbackHtml}'">`
+                : fallbackHtml;
+
+            const divIcon = L.divIcon({
+                html: iconHtml,
+                className: 'item-spawn-icon',
+                iconAnchor: [0, 0],
+                popupAnchor: [0, -18],
+            });
+
+            item.coordinates.forEach(coord => {
+                const marker = L.marker([coord[1] + 0.5, coord[0] + 0.5], { icon: divIcon });
+
+                let popupContent = `<div class="osrs-popup-inner" style="display: flex; align-items: center; gap: 8px;">`;
+                if (itemId !== null) {
+                    popupContent += `<img src="https://raw.githubusercontent.com/runelite/static.runelite.net/refs/heads/gh-pages/cache/item/icon/${itemId}.png" alt="${item.page_name}" style="width: 36px; height: 36px; image-rendering: pixelated;" onerror="this.style.display='none'">`;
+                }
+                popupContent += `<div>`;
+                popupContent += `<b><a href="https://oldschool.runescape.wiki/w/${encodeURIComponent(item.page_name.replace(/ /g, '_'))}" target="_blank">${item.page_name}</a></b><br>`;
+                popupContent += `<span class="popup-region">Region: ${regionLabel}</span><br>`;
+                popupContent += `<span class="popup-coords">x = ${coord[0]}, y = ${coord[1]}</span>`;
+                popupContent += `</div></div>`;
+
+                marker.bindPopup(popupContent, { autoPan: false, className: 'osrs-popup' });
                 spawnsLayer.addLayer(marker);
             });
         });
