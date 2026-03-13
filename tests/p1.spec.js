@@ -125,9 +125,7 @@ test.describe('P1 feature coverage', () => {
     await expect(page.locator('.planner-card-virtual').first().locator('.planner-virtual-name')).toHaveValue('Buy stew from shop');
   });
 
-  test('custom step edited name persists (known defect)', async ({ page }) => {
-    test.fail(true, 'Current implementation does not persist edited virtual step name to localStorage.');
-
+  test('custom step edited name persists', async ({ page }) => {
     await gotoApp(page);
     await openPlannerTab(page);
 

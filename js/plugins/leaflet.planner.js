@@ -989,12 +989,25 @@ function buildPlannerCard(item, task, pts, runPts, orderNum) {
     if (isVirtual) {
         const nameInput = card.querySelector('.planner-virtual-name');
         const descInput = card.querySelector('.planner-virtual-desc');
+        const itemId = item.id;
         const saveVirtual = () => {
-            item.customName = nameInput.value.trim();
-            item.customDesc = descInput.value.trim();
-            savePlanner();
-            redrawMapOverlays();
+            const ctx = findItemContext(itemId);
+            const liveItem = ctx ? ctx.item : null;
+            if (!liveItem) return;
+            const nextName = nameInput.value.trim();
+            const nextDesc = descInput.value.trim();
+            const changed = liveItem.customName !== nextName || liveItem.customDesc !== nextDesc;
+            liveItem.customName = nextName;
+            liveItem.customDesc = nextDesc;
+            if (changed) {
+                savePlanner();
+                redrawMapOverlays();
+            }
         };
+        nameInput.addEventListener('input', saveVirtual);
+        descInput.addEventListener('input', saveVirtual);
+        nameInput.addEventListener('change', saveVirtual);
+        descInput.addEventListener('change', saveVirtual);
         nameInput.addEventListener('blur', saveVirtual);
         nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); nameInput.blur(); } });
         nameInput.addEventListener('click', e => e.stopPropagation());
