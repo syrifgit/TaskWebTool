@@ -185,3 +185,162 @@ textarea {
 	border-color: #005a9e;
 	font-weight: bold;
 }
+
+.leaflet-control-allshops {
+	border-radius: 4px;
+	box-shadow: 0 1px 5px rgba(0,0,0,0.5);
+	margin-top: 6px;
+}
+
+.leaflet-control-pickpocket {
+	margin-top: 6px;
+	width: 40px;
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	overflow: visible;
+}
+
+.leaflet-control-pickpocket.is-expanded {
+	width: 240px;
+	background: #1a1200;
+	border: 1px solid #6b5900;
+	border-radius: 4px;
+	box-shadow: 0 1px 5px rgba(0,0,0,0.5);
+	overflow: hidden;
+}
+
+.leaflet-control-allshops {
+	width: 48px;
+	margin-top: 6px;
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	overflow: hidden;
+}
+
+.leaflet-control-pickpocket-btn,
+.leaflet-control-allshops-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 40px;
+	height: 40px;
+	background: #1a1200;
+	border: 1px solid #6b5900;
+	color: #e8d5a0;
+	text-decoration: none;
+	cursor: pointer;
+	font-size: 18px;
+	transition: background 0.15s, border-color 0.15s;
+}
+
+.leaflet-control-pickpocket-btn {
+	width: 40px;
+	height: 40px;
+	justify-content: center;
+	gap: 0;
+	padding: 0;
+	box-sizing: border-box;
+	background: transparent;
+	border: none;
+	box-shadow: none;
+}
+
+.leaflet-control-allshops-btn {
+	width: 48px;
+	height: 48px;
+	min-width: 48px;
+	max-width: 48px;
+	min-height: 48px;
+	max-height: 48px;
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	padding: 0;
+	line-height: 0;
+}
+
+/* Override Leaflet's .leaflet-bar a default white tile styling. */
+.leaflet-control-allshops a.leaflet-control-allshops-btn {
+	background: transparent !important;
+	border: none !important;
+	border-bottom: none !important;
+}
+
+.leaflet-control-pickpocket.is-expanded .leaflet-control-pickpocket-btn {
+	width: 100%;
+	justify-content: flex-start;
+	gap: 8px;
+	padding: 4px 8px;
+}
+
+.leaflet-control-pickpocket-btn:hover {
+	background: transparent !important;
+	border-color: transparent !important;
+}
+
+.leaflet-control-pickpocket-btn.is-active {
+	background: transparent !important;
+	border-color: transparent !important;
+	box-shadow: none;
+}
+
+.leaflet-control-allshops-btn:hover {
+	background: transparent !important;
+	border-color: transparent !important;
+}
+
+.leaflet-control-allshops-btn.is-active {
+	background: transparent !important;
+	border-color: transparent !important;
+	box-shadow: none;
+}
+
+.leaflet-control-allshops-btn:focus,
+.leaflet-control-allshops-btn:focus-visible {
+	outline: none;
+	box-shadow: none;
+}
+
+.leaflet-control-pickpocket-icon,
+.leaflet-control-allshops-icon {
+	width: 20px;
+	height: 20px;
+	display: block;
+	image-rendering: pixelated;
+}
+
+.leaflet-control-pickpocket-icon {
+	width: 40px;
+	height: 40px;
+}
+
+.leaflet-control-allshops-icon {
+	width: 40px;
+	height: 40px;
+}
+
+.leaflet-control-pickpocket-panel {
+	border-top: 1px solid #3a2a00;
+	background: #1a1200;
+}
+
+.leaflet-control-pickpocket-list {
+	max-height: 240px;
+	overflow-y: auto;
+	background-color: #1e1500;
+}
+
+.leaflet-control-pickpocket-dot {
+	color: #ffd700;
+	font-size: 10px;
+}
+
+.pickpocket-npc-marker {
+	filter: drop-shadow(0 0 2px rgba(255, 215, 0, 0.9)) drop-shadow(0 0 5px rgba(255, 215, 0, 0.45));
+}
+
+.popup-pickpocket-entry {
+	margin: 2px 0;
+}

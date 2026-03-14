@@ -1191,4 +1191,230 @@ export default void function (factory) {
     L.itemSpawns = function (options) {
         return new L.ItemSpawns(options);
     }
+
+    // ── Pickpocketable NPCs layer ───────────────────────────────────────
+    // Loads the pickpocketable NPC id list and renders yellow pins for the
+    // currently enabled regions.
+    L.PickpocketableNPCs = L.LayerGroup.extend({
+        initialize: function (options) {
+            L.LayerGroup.prototype.initialize.call(this);
+            L.setOptions(this, options);
+            this._allData = null;
+            this._entryLocations = new Map();
+            this._entryFocusIndices = {};
+            this._selectedMarkers = [];
+        },
+
+        onAdd: function (map) {
+            this._map = map;
+            this._loadAndRender();
+        },
+
+        _loadAndRender: async function () {
+            if (!this._allData) {
+                try {
+                    let [allNPCs, pickpocketIds] = await Promise.all([
+                        fetch(`${this.options.folder}/monsters.json`).then(res => res.json()),
+                        fetch(`${this.options.folder}/pickpocketable_npc_names.json`).then(res => res.json())
+                    ]);
+
+                    let idSet = new Set((pickpocketIds || []).map(id => String(id)));
+                    this._allData = allNPCs.filter(npc => {
+                        return npc && npc.page_name && npc.coordinates && npc.coordinates.length > 0 && idSet.has(String(npc.npc_id));
+                    });
+                } catch (e) {
+                    console.error('L.PickpocketableNPCs: failed to load data', e);
+                    return;
+                }
+            }
+
+            this._renderForRegions(this.options.regions || []);
+        },
+
+        _renderForRegions: function (regions) {
+            this.clearLayers();
+            this._clearSelectedMarkers();
+            this._entryLocations = new Map();
+            this._entryFocusIndices = {};
+            if (!this._allData) {
+                if (typeof this.options.onDataUpdated === 'function') {
+                    this.options.onDataUpdated([]);
+                }
+                return;
+            }
+
+            const hasRegionFilter = Array.isArray(this.options.regions);
+            const regionSet = new Set((regions || []).map(region => region.toLowerCase()));
+            if (hasRegionFilter && regionSet.size === 0) {
+                if (typeof this.options.onDataUpdated === 'function') {
+                    this.options.onDataUpdated([]);
+                }
+                return;
+            }
+
+            const groups = new Map();
+
+            this._allData.forEach(npc => {
+                if (regionSet.size > 0) {
+                    if (!npc.leagueregion || npc.leagueregion.length === 0) return;
+                    if (!npc.leagueregion.some(region => regionSet.has(region.toLowerCase()))) return;
+                }
+
+                npc.coordinates.forEach(coord => {
+                    const key = `${coord[0]}|${coord[1]}`;
+                    if (!groups.has(key)) {
+                        groups.set(key, {
+                            coord: coord,
+                            names: new Map(),
+                            regions: new Set()
+                        });
+                    }
+
+                    const group = groups.get(key);
+                    if (!group.names.has(npc.page_name)) {
+                        group.names.set(npc.page_name, {
+                            page_name: npc.page_name,
+                            npc_ids: new Set()
+                        });
+                    }
+                    group.names.get(npc.page_name).npc_ids.add(String(npc.npc_id));
+
+                    if (Array.isArray(npc.leagueregion)) {
+                        npc.leagueregion.forEach(region => group.regions.add(region));
+                    }
+                });
+            });
+
+            groups.forEach(group => {
+                const coord = group.coord;
+                const marker = L.circleMarker([coord[1] + 0.5, coord[0] + 0.5], this._getMarkerStyle(false));
+
+                const npcEntries = Array.from(group.names.values()).sort((left, right) => {
+                    return left.page_name.localeCompare(right.page_name);
+                });
+                const regionLabel = Array.from(group.regions)
+                    .map(region => region.charAt(0).toUpperCase() + region.slice(1))
+                    .sort()
+                    .join(', ');
+
+                let popupContent = `<div class="osrs-popup-inner">`;
+                popupContent += `<b>Pickpocketable NPC${npcEntries.length === 1 ? '' : 's'}</b><br>`;
+                npcEntries.forEach(entry => {
+                    const wikiUrl = `https://oldschool.runescape.wiki/w/${encodeURIComponent(entry.page_name.replace(/ /g, '_'))}`;
+                    popupContent += `<div class="popup-pickpocket-entry"><a href="${wikiUrl}" target="_blank" rel="noopener">${entry.page_name}</a></div>`;
+                });
+                if (regionLabel) {
+                    popupContent += `<span class="popup-region">Region: ${regionLabel}</span><br>`;
+                }
+                popupContent += `<span class="popup-coords">x = ${coord[0]}, y = ${coord[1]}</span><br>`;
+                popupContent += `</div>`;
+
+                marker.bindPopup(popupContent, {
+                    autoPan: false,
+                    className: 'osrs-popup'
+                });
+
+                npcEntries.forEach(entry => {
+                    if (!this._entryLocations.has(entry.page_name)) {
+                        this._entryLocations.set(entry.page_name, []);
+                        this._entryFocusIndices[entry.page_name] = 0;
+                    }
+
+                    this._entryLocations.get(entry.page_name).push({
+                        coord: coord,
+                        marker: marker
+                    });
+                });
+
+                this.addLayer(marker);
+            });
+
+            if (typeof this.options.onDataUpdated === 'function') {
+                this.options.onDataUpdated(this.getListEntries());
+            }
+        },
+
+        _getMarkerStyle: function (isSelected) {
+            return {
+                radius: isSelected ? 8 : 6,
+                fillColor: '#ffd700',
+                color: isSelected ? '#fff2a8' : '#7a5c00',
+                weight: isSelected ? 3 : 2,
+                opacity: 0.95,
+                fillOpacity: isSelected ? 1 : 0.88,
+                className: 'pickpocket-npc-marker'
+            };
+        },
+
+        _clearSelectedMarkers: function () {
+            (this._selectedMarkers || []).forEach(marker => {
+                if (marker && marker.setStyle) {
+                    marker.setStyle(this._getMarkerStyle(false));
+                }
+            });
+            this._selectedMarkers = [];
+        },
+
+        clearSelection: function () {
+            this._clearSelectedMarkers();
+        },
+
+        getListEntries: function () {
+            return Array.from(this._entryLocations.entries())
+                .map(([name, locations]) => ({
+                    name: name,
+                    count: locations.length
+                }))
+                .sort((left, right) => left.name.localeCompare(right.name));
+        },
+
+        focusEntry: function (name) {
+            if (!this._entryLocations.has(name)) {
+                this.clearSelection();
+                return false;
+            }
+
+            const locations = this._entryLocations.get(name);
+            if (!locations || locations.length === 0) {
+                this.clearSelection();
+                return false;
+            }
+
+            const currentIndex = this._entryFocusIndices[name] || 0;
+            const location = locations[currentIndex];
+
+            this._clearSelectedMarkers();
+            if (location.marker && location.marker.setStyle) {
+                location.marker.setStyle(this._getMarkerStyle(true));
+                this._selectedMarkers = [location.marker];
+            }
+
+            if (this._map) {
+                this._map.setView([location.coord[1] + 0.5, location.coord[0] + 0.5], 0.5);
+            }
+            if (location.marker && location.marker.openPopup) {
+                location.marker.openPopup();
+            }
+
+            this._entryFocusIndices[name] = (currentIndex + 1) % locations.length;
+            return true;
+        },
+
+        updateRegions: function (regions) {
+            this.options.regions = regions;
+            if (this._map) {
+                this._renderForRegions(regions);
+            }
+        },
+
+        onRemove: function (map) {
+            this._clearSelectedMarkers();
+            this.clearLayers();
+            L.LayerGroup.prototype.onRemove.call(this, map);
+        }
+    });
+
+    L.pickpocketableNPCs = function (options) {
+        return new L.PickpocketableNPCs(options);
+    }
 });

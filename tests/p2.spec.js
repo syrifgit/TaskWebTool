@@ -81,6 +81,48 @@ test.describe('P2 comprehensive feature coverage', () => {
     await expect(page.locator('.planner-group').first().locator('.planner-group-name')).toHaveValue('Boss Route');
   });
 
+  test('pickpocket toggle respects region filter and popup has wiki links', async ({ page }) => {
+    await gotoApp(page);
+
+    const toggle = page.locator('.leaflet-control-pickpocket-btn');
+    const varlamoreButton = page.locator('.leaflet-control-region-button[data-region="Varlamore"]');
+    const misthalinButton = page.locator('.leaflet-control-region-button[data-region="Misthalin"]');
+
+    await varlamoreButton.click();
+    await toggle.click();
+
+    await page.waitForTimeout(300);
+    await expect(page.locator('.pickpocket-npc-marker')).toHaveCount(0);
+    await expect(page.locator('.leaflet-control-pickpocket-panel')).toBeVisible();
+    await expect(page.locator('.leaflet-control-pickpocket-list')).not.toContainText('Loading...', { timeout: 15000 });
+    await expect(page.locator('.leaflet-control-pickpocket-list')).toContainText('No results');
+
+    await misthalinButton.click();
+    await page.waitForFunction(() => document.querySelectorAll('.pickpocket-npc-marker').length > 0);
+    const firstRow = page.locator('[data-pickpocket-name]').first();
+    await expect(firstRow).toBeVisible();
+
+    const beforeCenter = await page.evaluate(() => {
+      const center = window.runescape_map.getCenter();
+      return { lat: center.lat, lng: center.lng };
+    });
+
+    await firstRow.click();
+    await expect(firstRow).toHaveClass(/is-selected/);
+
+    const afterCenter = await page.evaluate(() => {
+      const center = window.runescape_map.getCenter();
+      return { lat: center.lat, lng: center.lng };
+    });
+
+    expect(afterCenter.lat).not.toBe(beforeCenter.lat);
+    expect(afterCenter.lng).not.toBe(beforeCenter.lng);
+
+    const popupLink = page.locator('.leaflet-popup-content .popup-pickpocket-entry a').first();
+    await expect(popupLink).toBeVisible();
+    await expect(popupLink).toHaveAttribute('href', /oldschool\.runescape\.wiki\/w\//);
+  });
+
   test('planner group collapse state persists after reload', async ({ page }) => {
     await gotoApp(page);
     await seedPlannerWithFirstTasks(page, 2);
