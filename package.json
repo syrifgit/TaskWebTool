@@ -5,6 +5,7 @@
   "scripts": {
     "test:e2e": "playwright test",
     "test:e2e:core": "playwright test tests/p0.spec.js tests/p1.spec.js",
+    "test:e2e:perf": "playwright test tests/perf.spec.js --workers=1",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report"

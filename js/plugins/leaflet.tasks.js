@@ -9,6 +9,7 @@
 
 const TASKS_URL = 'data_osrs/Raging_Echoes_League-Tasks.json';
 const STORAGE_KEY = 'league_tasks_completed';
+const TASK_SEARCH_DEBOUNCE_MS = 100;
 
 let allTasks = [];
 let currentSearch = '';
@@ -17,6 +18,7 @@ let showGeneralTasks = false;
 let selectedTaskName = null;
 let activeTab = 'active'; // 'active' | 'completed'
 let taskPointsLayer = null; // L.LayerGroup of strategy point markers
+let taskSearchDebounce = null;
 
 // Persisted set of completed task names
 let completedTasks = new Set();
@@ -323,8 +325,13 @@ document.querySelectorAll('.task-tab').forEach(btn => {
 
 // ── Search & toggles ─────────────────────────────────────────────
 taskSearch.addEventListener('input', e => {
-    currentSearch = e.target.value.trim();
-    renderTasks();
+    const nextSearch = e.target.value.trim();
+    if (taskSearchDebounce) clearTimeout(taskSearchDebounce);
+    taskSearchDebounce = setTimeout(() => {
+        currentSearch = nextSearch;
+        renderTasks();
+        taskSearchDebounce = null;
+    }, TASK_SEARCH_DEBOUNCE_MS);
 });
 
 document.getElementById('task-show-general').addEventListener('change', e => {
@@ -341,6 +348,7 @@ document.getElementById('task-show-general').addEventListener('change', e => {
     let spawnsLayer = null;   // L.layerGroup, created on first show
     let allSpawnsData = null; // cached JSON
     let allNamesData = null;  // cached names map (id -> name)
+    let nameToId = null;      // cached reverse names map (name -> lowest numeric id)
     let spawnsVisible = false;
 
     async function loadSpawnsData() {
@@ -350,9 +358,17 @@ document.getElementById('task-show-general').addEventListener('change', e => {
                 fetch('data_osrs/item_spawns.json').then(r => r.json()),
                 fetch('data_osrs/names.json').then(r => r.json()).catch(() => null)
             ]);
+            nameToId = {};
+            if (allNamesData) {
+                for (const id in allNamesData) {
+                    const key = allNamesData[id].toLowerCase();
+                    if (!(key in nameToId) || +id < +nameToId[key]) nameToId[key] = id;
+                }
+            }
         } catch (e) {
             console.error('item_spawns: failed to load', e);
             allSpawnsData = [];
+            nameToId = {};
         }
         return allSpawnsData;
     }
@@ -407,15 +423,6 @@ document.getElementById('task-show-general').addEventListener('change', e => {
 
         const regionSet = new Set(regions.map(r => r.toLowerCase()));
         spawnsLayer = L.layerGroup();
-
-        // Build reverse name->id lookup once, keeping the lowest numeric ID per name
-        const nameToId = {};
-        if (allNamesData) {
-            for (const id in allNamesData) {
-                const key = allNamesData[id].toLowerCase();
-                if (!(key in nameToId) || +id < +nameToId[key]) nameToId[key] = id;
-            }
-        }
 
         const fallbackHtml = `<div class='item-spawn-icon-fallback'></div>`;
         const visibleSpawns = allSpawnsData.filter(item => {

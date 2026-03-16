@@ -36,6 +36,7 @@ const VIRTUAL_COLOR = '#00cccc'; // teal – visually distinct from all tier col
 // ─── State ────────────────────────────────────────────────────────
 let plannerGroups = [];  // [{ id, name, collapsed, items:[{ id, taskName, ... }] }]
 let allTasksRef  = [];   // mirror of allTasks from leaflet.tasks.js
+let allTasksByName = new Map();
 let plannerMap   = null;
 let plannerLineMode    = 'all';      // 'all' | 'nearby' | 'none'
 let plannerPinsVisible = true;
@@ -142,7 +143,7 @@ function genId() {
 
 // ─── Task lookup ──────────────────────────────────────────────────
 function getTask(name) {
-    return allTasksRef.find(t => t.name === name) || null;
+    return allTasksByName.get(name) || null;
 }
 
 // ─── Strategy location clustering ─────────────────────────────────
@@ -1321,6 +1322,7 @@ function initPlanner(map) {
     function tryGetTasks() {
         if (window._allTasksRef && window._allTasksRef.length > 0) {
             allTasksRef = window._allTasksRef;
+            allTasksByName = new Map(allTasksRef.map(task => [task.name, task]));
             // Always redraw map overlays so saved pins appear immediately on load
             redrawMapOverlays();
             // Also render the UI if the planner tab is already active
