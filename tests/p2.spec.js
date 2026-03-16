@@ -95,6 +95,41 @@ test.describe('P2 comprehensive feature coverage', () => {
     await expect(popupLink).toHaveAttribute('href', /oldschool\.runescape\.wiki\/w\//);
   });
 
+  test('thieving list scroll wheel scrolls list without zooming map', async ({ page }) => {
+    await gotoApp(page);
+
+    const toggle = page.locator('.leaflet-control-pickpocket-btn');
+    const list = page.locator('.leaflet-control-pickpocket-list');
+
+    await toggle.click();
+    await expect(list).not.toContainText('Loading...', { timeout: 15000 });
+
+    await page.waitForFunction(() => {
+      const listEl = document.querySelector('.leaflet-control-pickpocket-list');
+      return listEl && listEl.scrollHeight > listEl.clientHeight;
+    });
+
+    const before = await list.evaluate((el) => ({
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      zoom: window.runescape_map.getZoom()
+    }));
+
+    await list.hover();
+    await page.mouse.wheel(0, 500);
+    await page.waitForTimeout(150);
+
+    const after = await list.evaluate((el) => ({
+      scrollTop: el.scrollTop,
+      zoom: window.runescape_map.getZoom()
+    }));
+
+    expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
+    expect(after.scrollTop).toBeGreaterThan(before.scrollTop);
+    expect(after.zoom).toBe(before.zoom);
+  });
+
   test('planner group collapse state persists after reload', async ({ page }) => {
     await gotoApp(page);
     await seedPlannerWithFirstTasks(page, 2);

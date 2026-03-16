@@ -1336,14 +1336,15 @@ export default void function (factory) {
         options: {
             position: 'bottomleft',
             folder: 'data_osrs',
-            title: 'Toggle pickpocketable NPC locations',
+            title: 'Toggle thieving locations',
         },
 
         onAdd: function (map) {
             this._map = map;
             this._active = false;
-            this._layer = null;
-            this._selectedName = null;
+            this._npcLayer = null;
+            this._sceneryLayer = null;
+            this._selectedKey = null;
 
             let container = L.DomUtil.create('div', 'leaflet-control-pickpocket');
             let btn = L.DomUtil.create('a', 'leaflet-control-pickpocket-btn', container);
@@ -1366,9 +1367,243 @@ export default void function (factory) {
             this._panel = L.DomUtil.create('div', 'leaflet-control-pickpocket-panel', container);
             this._panel.style.display = 'none';
             this._panelTitle = L.DomUtil.create('div', 'leaflet-control-display-item-list-title', this._panel);
-            this._panelTitle.innerHTML = '<b>Pickpocket NPCs (0)</b>';
+            this._panelTitle.innerHTML = '<b>Thieving (0)</b>';
             this._listContent = L.DomUtil.create('div', 'leaflet-control-display-item-list-content leaflet-control-pickpocket-list', this._panel);
-            this._renderEmptyList('Enable to view NPCs');
+            this._renderEmptyList('Enable to view thieving locations');
+
+            L.DomEvent.disableClickPropagation(container);
+            L.DomEvent.disableScrollPropagation(this._panel);
+            L.DomEvent.disableScrollPropagation(this._listContent);
+
+            if (this.options.regionControl) {
+                this.options.regionControl.onRegionChange(() => {
+                    if (this._active) {
+                        const regions = this.options.regionControl.getEnabledRegions();
+                        if (this._npcLayer) {
+                            this._npcLayer.updateRegions(regions);
+                        }
+                        if (this._sceneryLayer) {
+                            this._sceneryLayer.updateRegions(regions);
+                        }
+                        this._refreshList();
+                    }
+                });
+            }
+
+            this._btn = btn;
+            this._container = container;
+            return container;
+        },
+
+        toggle: function () {
+            if (this._active) {
+                this._active = false;
+                this._selectedKey = null;
+                this._btn.classList.remove('is-active');
+                this._container.classList.remove('is-expanded');
+                this._panel.style.display = 'none';
+                this._renderEmptyList('Enable to view thieving locations');
+                this._removeLayers();
+            } else {
+                this._active = true;
+                this._btn.classList.add('is-active');
+                this._container.classList.add('is-expanded');
+                this._panel.style.display = '';
+                this._renderEmptyList('Loading...');
+                this._loadLayers();
+            }
+        },
+
+        _removeLayers: function () {
+            if (this._npcLayer) {
+                this._npcLayer.remove();
+                this._npcLayer = null;
+            }
+            if (this._sceneryLayer) {
+                this._sceneryLayer.remove();
+                this._sceneryLayer = null;
+            }
+        },
+
+        _loadLayers: function () {
+            this._removeLayers();
+            const regions = this.options.regionControl ? this.options.regionControl.getEnabledRegions() : [];
+            this._npcLayer = L.pickpocketableNPCs({
+                folder: this.options.folder,
+                regions: regions,
+                onDataUpdated: (entries) => {
+                    this._renderList(this._getCombinedEntries());
+                }
+            }).addTo(this._map);
+
+            this._sceneryLayer = L.thievableScenery({
+                folder: this.options.folder,
+                regions: regions,
+                onDataUpdated: () => {
+                    this._renderList(this._getCombinedEntries());
+                }
+            }).addTo(this._map);
+        },
+
+        _getCombinedEntries: function () {
+            const npcEntries = this._npcLayer
+                ? this._npcLayer.getListEntries().map(entry => ({
+                    key: `npc:${entry.name}`,
+                    name: entry.name,
+                    count: entry.count,
+                    type: 'npc',
+                    label: 'NPC'
+                }))
+                : [];
+
+            const sceneryEntries = this._sceneryLayer
+                ? this._sceneryLayer.getListEntries().map(entry => ({
+                    key: `scenery:${entry.name}`,
+                    name: entry.name,
+                    count: entry.count,
+                    type: 'scenery',
+                    label: 'Stall/Chest'
+                }))
+                : [];
+
+            return npcEntries.concat(sceneryEntries)
+                .sort((left, right) => {
+                    if (left.type !== right.type) {
+                        return left.type === 'npc' ? -1 : 1;
+                    }
+                    if (left.name === right.name) {
+                        return 0;
+                    }
+                    return left.name.localeCompare(right.name);
+                });
+        },
+
+        _refreshList: function () {
+            if (!this._active) return;
+            this._renderList(this._getCombinedEntries());
+        },
+
+        _renderEmptyList: function (message) {
+            this._panelTitle.innerHTML = '<b>Thieving (0)</b>';
+            this._listContent.innerHTML = '';
+            this._listContent.style.cssText = 'max-height: 240px; overflow-y: auto; padding: 0.7em; text-align: center; background-color: #1e1500; color: #7a6a40;';
+            this._listContent.textContent = message;
+        },
+
+        _renderList: function (entries) {
+            if (!this._listContent) return;
+
+            this._listContent.innerHTML = '';
+            this._listContent.style.cssText = 'max-height: 240px; overflow-y: auto; background-color: #1e1500;';
+            this._panelTitle.innerHTML = `<b>Thieving (${entries.length})</b>`;
+
+            if (!entries || entries.length === 0) {
+                this._selectedKey = null;
+                if (this._npcLayer && this._npcLayer.clearSelection) {
+                    this._npcLayer.clearSelection();
+                }
+                if (this._sceneryLayer && this._sceneryLayer.clearSelection) {
+                    this._sceneryLayer.clearSelection();
+                }
+                this._listContent.style.cssText += ' padding: 0.7em; text-align: center; color: #7a6a40;';
+                this._listContent.textContent = 'No results';
+                return;
+            }
+
+            entries.forEach(entry => {
+                let listItem = L.DomUtil.create('div', 'leaflet-control-display-item-list-item', this._listContent);
+                listItem.style.cssText = 'background-color: #1e1500; color: #e8d5a0;';
+                listItem.innerHTML = `${entry.name} (${entry.count}) <span class="leaflet-control-pickpocket-dot">${entry.label}</span>`;
+                listItem.setAttribute('data-thieving-key', entry.key);
+                if (entry.type === 'npc') {
+                    listItem.setAttribute('data-pickpocket-name', entry.name);
+                }
+
+                if (this._selectedKey === entry.key) {
+                    listItem.classList.add('is-selected');
+                }
+
+                listItem.addEventListener('click', () => {
+                    let prevSelected = this._listContent.querySelector('.is-selected');
+                    if (prevSelected && prevSelected !== listItem) {
+                        prevSelected.classList.remove('is-selected');
+                    }
+
+                    listItem.classList.add('is-selected');
+                    this._selectedKey = entry.key;
+
+                    if (entry.type === 'npc' && this._npcLayer) {
+                        if (this._sceneryLayer && this._sceneryLayer.clearSelection) {
+                            this._sceneryLayer.clearSelection();
+                        }
+                        this._npcLayer.focusEntry(entry.name);
+                    } else if (entry.type === 'scenery' && this._sceneryLayer) {
+                        if (this._npcLayer && this._npcLayer.clearSelection) {
+                            this._npcLayer.clearSelection();
+                        }
+                        this._sceneryLayer.focusEntry(entry.name);
+                    }
+                });
+            });
+
+            if (this._selectedKey && !entries.some(entry => entry.key === this._selectedKey)) {
+                this._selectedKey = null;
+                if (this._npcLayer && this._npcLayer.clearSelection) {
+                    this._npcLayer.clearSelection();
+                }
+                if (this._sceneryLayer && this._sceneryLayer.clearSelection) {
+                    this._sceneryLayer.clearSelection();
+                }
+            }
+        },
+
+        onRemove: function () {
+            this._removeLayers();
+        }
+    });
+
+    L.control.pickpocketToggle = function (options) {
+        return new L.Control.PickpocketToggle(options);
+    };
+
+    // ── Thievable Scenery toggle button ──────────────────────────────────
+    L.Control.ThievableSceneryToggle = L.Control.extend({
+        options: {
+            position: 'bottomleft',
+            folder: 'data_osrs',
+            title: 'Toggle thievable scenery locations (stalls & chests)',
+        },
+
+        onAdd: function (map) {
+            this._map = map;
+            this._active = false;
+            this._layer = null;
+            this._selectedName = null;
+
+            let container = L.DomUtil.create('div', 'leaflet-control-thievable-scenery');
+            let btn = L.DomUtil.create('a', 'leaflet-control-thievable-scenery-btn', container);
+            btn.href = '#';
+            btn.title = this.options.title;
+            btn.setAttribute('role', 'button');
+            btn.setAttribute('aria-label', this.options.title);
+
+            let img = L.DomUtil.create('img', 'leaflet-control-thievable-scenery-icon', btn);
+            img.src = 'https://oldschool.runescape.wiki/images/Thieves%27_armband.png';
+            img.alt = 'Thievable Scenery';
+            img.style.cssText = 'width: 40px; height: 40px; display: block; image-rendering: pixelated;';
+            img.onerror = () => { img.remove(); btn.textContent = '⚱'; };
+
+            L.DomEvent.on(btn, 'click', (e) => {
+                L.DomEvent.preventDefault(e);
+                this.toggle();
+            });
+
+            this._panel = L.DomUtil.create('div', 'leaflet-control-thievable-scenery-panel', container);
+            this._panel.style.display = 'none';
+            this._panelTitle = L.DomUtil.create('div', 'leaflet-control-display-item-list-title', this._panel);
+            this._panelTitle.innerHTML = '<b>Thievable Scenery (0)</b>';
+            this._listContent = L.DomUtil.create('div', 'leaflet-control-display-item-list-content leaflet-control-thievable-scenery-list', this._panel);
+            this._renderEmptyList('Enable to view scenery');
 
             L.DomEvent.disableClickPropagation(container);
 
@@ -1382,6 +1617,7 @@ export default void function (factory) {
             }
 
             this._btn = btn;
+            this._container = container;
             return container;
         },
 
@@ -1392,7 +1628,7 @@ export default void function (factory) {
                 this._btn.classList.remove('is-active');
                 this._container.classList.remove('is-expanded');
                 this._panel.style.display = 'none';
-                this._renderEmptyList('Enable to view NPCs');
+                this._renderEmptyList('Enable to view scenery');
                 if (this._layer) {
                     this._layer.remove();
                     this._layer = null;
@@ -1403,21 +1639,20 @@ export default void function (factory) {
                 this._container.classList.add('is-expanded');
                 this._panel.style.display = '';
                 this._renderEmptyList('Loading...');
-                this._loadNPCs();
+                this._loadScenery();
             }
         },
 
-        _loadNPCs: function () {
+        _loadScenery: function () {
             if (this._layer) { this._layer.remove(); this._layer = null; }
             const regions = this.options.regionControl ? this.options.regionControl.getEnabledRegions() : [];
-            this._layer = L.pickpocketableNPCs({
+            this._layer = L.thievableScenery({
                 folder: this.options.folder,
                 regions: regions,
                 onDataUpdated: (entries) => {
                     this._renderList(entries || []);
                 }
             }).addTo(this._map);
-                            this._container = container;
         },
 
         _refreshList: function () {
@@ -1426,9 +1661,9 @@ export default void function (factory) {
         },
 
         _renderEmptyList: function (message) {
-            this._panelTitle.innerHTML = '<b>Pickpocket NPCs (0)</b>';
+            this._panelTitle.innerHTML = '<b>Thievable Scenery (0)</b>';
             this._listContent.innerHTML = '';
-            this._listContent.style.cssText = 'max-height: 240px; overflow-y: auto; padding: 0.7em; text-align: center; background-color: #1e1500; color: #7a6a40;';
+            this._listContent.style.cssText = 'max-height: 240px; overflow-y: auto; padding: 0.7em; text-align: center; background-color: #1e1500; color: #8b7a50;';
             this._listContent.textContent = message;
         },
 
@@ -1437,14 +1672,14 @@ export default void function (factory) {
 
             this._listContent.innerHTML = '';
             this._listContent.style.cssText = 'max-height: 240px; overflow-y: auto; background-color: #1e1500;';
-            this._panelTitle.innerHTML = `<b>Pickpocket NPCs (${entries.length})</b>`;
+            this._panelTitle.innerHTML = `<b>Thievable Scenery (${entries.length})</b>`;
 
             if (!entries || entries.length === 0) {
                 this._selectedName = null;
                 if (this._layer && this._layer.clearSelection) {
                     this._layer.clearSelection();
                 }
-                this._listContent.style.cssText += ' padding: 0.7em; text-align: center; color: #7a6a40;';
+                this._listContent.style.cssText += ' padding: 0.7em; text-align: center; color: #8b7a50;';
                 this._listContent.textContent = 'No results';
                 return;
             }
@@ -1452,8 +1687,8 @@ export default void function (factory) {
             entries.forEach(entry => {
                 let listItem = L.DomUtil.create('div', 'leaflet-control-display-item-list-item', this._listContent);
                 listItem.style.cssText = 'background-color: #1e1500; color: #e8d5a0;';
-                listItem.innerHTML = `${entry.name} (${entry.count}) <span class="leaflet-control-pickpocket-dot">&#9679;</span>`;
-                listItem.setAttribute('data-pickpocket-name', entry.name);
+                listItem.innerHTML = `${entry.name} (${entry.count}) <span class="leaflet-control-thievable-scenery-dot">&#9679;</span>`;
+                listItem.setAttribute('data-thievable-scenery-name', entry.name);
 
                 if (this._selectedName === entry.name) {
                     listItem.classList.add('is-selected');
@@ -1487,9 +1722,8 @@ export default void function (factory) {
         }
     });
 
-    L.control.pickpocketToggle = function (options) {
-        return new L.Control.PickpocketToggle(options);
+    L.control.thievableSceneryToggle = function (options) {
+        return new L.Control.ThievableSceneryToggle(options);
     };
-
 
  });
