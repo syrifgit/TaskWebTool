@@ -2,6 +2,7 @@
 
 import "../leaflet.js";
 import "../layers.js";
+import { fetchJsonCached } from "../data/json-cache.js";
 
 export default void function (factory) {
     var L;
@@ -440,8 +441,8 @@ export default void function (factory) {
             if (this.options.name) {
                 // Fetch names mapping for item IDs and full storeline data
                 Promise.all([
-                    fetch(`${this.options.folder}/names.json`).then(res => res.json()),
-                    fetch(`${this.options.folder}/storeline.json`).then(res => res.json())
+                    fetchJsonCached(`${this.options.folder}/names.json`),
+                    fetchJsonCached(`${this.options.folder}/storeline.json`)
                 ])
                     .then(([names, allStoreData]) => {
                         this._names = names;
@@ -528,7 +529,7 @@ export default void function (factory) {
         },
 
         getData: async function (name) {
-            let data = await fetch(`${this.options.folder}/storeline.json`).then(res => res.json(), _ => {throw new Error(`Unable to fetch ${this.options.folder}/storeline.json`)});
+            let data = await fetchJsonCached(`${this.options.folder}/storeline.json`);
 
             let regionFilter = Array.isArray(this.options.regions) ? new Set(this.options.regions) : null;
             let isStrict = this.options.strict === true;
@@ -753,8 +754,8 @@ export default void function (factory) {
             L.LayerGroup.prototype.onAdd.call(this, map);
             this._map = map;
             Promise.all([
-                fetch(`${this.options.folder}/names.json`).then(r => r.json()),
-                fetch(`${this.options.folder}/storeline.json`).then(r => r.json())
+                fetchJsonCached(`${this.options.folder}/names.json`),
+                fetchJsonCached(`${this.options.folder}/storeline.json`)
             ]).then(([names, data]) => {
                 if (!this._map) return;
                 this._names = names;
@@ -890,8 +891,7 @@ export default void function (factory) {
         },
 
         getData: async function (name) {
-            let data = await fetch(`${this.options.folder}/monsters.json`)
-                .then(res => res.json(), _ => {throw new Error(`Unable to fetch ${this.options.folder}/monsters.json`)});
+            let data = await fetchJsonCached(`${this.options.folder}/monsters.json`);
             
             // Check if regions are provided
             let hasRegionFilter = Array.isArray(this.options.regions);
@@ -1012,8 +1012,7 @@ export default void function (factory) {
         },
 
         getData: async function (name) {
-            let data = await fetch(`${this.options.folder}/scenery.json`)
-                .then(res => res.json(), _ => {throw new Error(`Unable to fetch ${this.options.folder}/scenery.json`)});
+            let data = await fetchJsonCached(`${this.options.folder}/scenery.json`);
             
             // Check if regions are provided
             let hasRegionFilter = Array.isArray(this.options.regions);
@@ -1126,7 +1125,7 @@ export default void function (factory) {
         _loadAndRender: async function () {
             if (!this._allData) {
                 try {
-                    this._allData = await fetch(`${this.options.folder}/item_spawns.json`).then(res => res.json());
+                    this._allData = await fetchJsonCached(`${this.options.folder}/item_spawns.json`);
                 } catch (e) {
                     console.error('L.ItemSpawns: failed to load item_spawns.json', e);
                     return;
@@ -1215,8 +1214,8 @@ export default void function (factory) {
             if (!this._allData) {
                 try {
                     let [allNPCs, pickpocketIds] = await Promise.all([
-                        fetch(`${this.options.folder}/monsters.json`).then(res => res.json()),
-                        fetch(`${this.options.folder}/pickpocketable_npc_names.json`).then(res => res.json())
+                        fetchJsonCached(`${this.options.folder}/monsters.json`),
+                        fetchJsonCached(`${this.options.folder}/pickpocketable_npc_names.json`)
                     ]);
 
                     let idSet = new Set((pickpocketIds || []).map(id => String(id)));
@@ -1441,8 +1440,8 @@ export default void function (factory) {
             if (!this._allData) {
                 try {
                     let [allScenery, iconMapping] = await Promise.all([
-                        fetch(`${this.options.folder}/scenery.json`).then(res => res.json()),
-                        fetch(`${this.options.folder}/thievable_stall_icons.json`).then(res => res.json())
+                        fetchJsonCached(`${this.options.folder}/scenery.json`),
+                        fetchJsonCached(`${this.options.folder}/thievable_stall_icons.json`)
                     ]);
 
                     this._iconMapping = iconMapping || {};

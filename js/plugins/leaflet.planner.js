@@ -1,5 +1,7 @@
 'use strict';
 
+import { fetchJsonCached } from "../data/json-cache.js";
+
 /**
  * League Task Planner
  * Adds a "Planner" tab to the task panel.
@@ -191,7 +193,7 @@ function clusterStrategyPoints(task) {
 const _plannerJsonCache = {};
 async function _plannerFetchJson(url) {
     if (_plannerJsonCache[url]) return _plannerJsonCache[url];
-    try { _plannerJsonCache[url] = await fetch(url).then(r => r.json()); }
+    try { _plannerJsonCache[url] = await fetchJsonCached(url); }
     catch (e) { _plannerJsonCache[url] = []; }
     return _plannerJsonCache[url];
 }

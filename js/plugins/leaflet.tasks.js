@@ -1,5 +1,7 @@
 'use strict';
 
+import { fetchJsonCached } from "../data/json-cache.js";
+
 /**
  * League Tasks Panel
  * Renders a full-height task list to the right of the map,
@@ -19,6 +21,7 @@ let selectedTaskName = null;
 let activeTab = 'active'; // 'active' | 'completed'
 let taskPointsLayer = null; // L.LayerGroup of strategy point markers
 let taskSearchDebounce = null;
+let taskPointIcon = null;
 
 // Persisted set of completed task names
 let completedTasks = new Set();
@@ -42,6 +45,46 @@ function parseStrategyPoints(pointsStr) {
     return coords;
 }
 
+function normalizeTask(task) {
+    const strategy = task.strategy || null;
+    const strategySearch = strategy && strategy.search ? strategy.search.trim() : '';
+    const strategyPoints = strategy && strategy.points ? strategy.points.trim() : '';
+    const parsedStrategyPoints = strategyPoints ? parseStrategyPoints(strategyPoints) : [];
+
+    return {
+        ...task,
+        _searchText: `${task.name ?? ''} ${task.task ?? ''} ${task.area ?? ''}`.toLowerCase(),
+        _pointsValue: Number(task.points) || 0,
+        _strategySearch: strategySearch,
+        _strategyPoints: strategyPoints,
+        _strategyPinCount: parsedStrategyPoints.length,
+        _strategyCoords: parsedStrategyPoints,
+        _strictSearch: !(strategy && strategy.no_strict),
+    };
+}
+
+function getTaskPointIcon() {
+    if (!taskPointIcon && window.L) {
+        taskPointIcon = window.L.icon({
+            iconUrl: 'images/marker-icon.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+    }
+
+    return taskPointIcon;
+}
+
+function taskMatchesRegion(task, regionSet) {
+    if (!task.area) {
+        return showGeneralTasks;
+    }
+
+    return !regionSet || regionSet.has(task.area);
+}
+
 function clearTaskPoints() {
     if (taskPointsLayer) {
         const map = window.runescape_map;
@@ -52,29 +95,19 @@ function clearTaskPoints() {
 
 function drawTaskPoints(task) {
     clearTaskPoints();
-    const pointsStr = task.strategy && task.strategy.points ? task.strategy.points.trim() : '';
-    if (!pointsStr) return;
+    const coords = task._strategyCoords || [];
+    if (coords.length === 0) return;
 
     const map = window.runescape_map;
     const L = window.L;
     if (!map || !L) return;
 
-    const coords = parseStrategyPoints(pointsStr);
-    if (coords.length === 0) return;
-
     const popupHtml = `<div class="osrs-popup-inner"><b>${escHtml(task.name)}</b><br><span style="color:#e8d5a0;">${escHtml(task.task)}</span></div>`;
+    const icon = getTaskPointIcon();
 
     taskPointsLayer = L.layerGroup();
     coords.forEach(({ x, y }) => {
-        const marker = L.marker([y + 0.5, x + 0.5], {
-            icon: L.icon({
-                iconUrl: 'images/marker-icon.png',
-                iconSize: [25, 41],
-                iconAnchor: [12, 41],
-                popupAnchor: [1, -34],
-                shadowSize: [41, 41]
-            })
-        });
+        const marker = L.marker([y + 0.5, x + 0.5], { icon });
         marker.bindPopup(popupHtml, { autoPan: false, className: 'osrs-popup' });
         taskPointsLayer.addLayer(marker);
     });
@@ -89,20 +122,17 @@ const taskSearch = document.getElementById('task-search');
 // ── Filtering ─────────────────────────────────────────────────────
 function filterActiveTasks() {
     const search = currentSearch.toLowerCase();
-    const regions = currentRegions;
+    const regionSet = currentRegions !== null ? new Set(currentRegions) : null;
 
     return allTasks.filter(task => {
         if (completedTasks.has(task.name)) return false;
 
-        if (!task.area) {
-            if (!showGeneralTasks) return false;
-        } else if (regions !== null && !regions.includes(task.area)) {
+        if (!taskMatchesRegion(task, regionSet)) {
             return false;
         }
 
-        if (search) {
-            const haystack = `${task.name} ${task.task} ${task.area}`.toLowerCase();
-            if (!haystack.includes(search)) return false;
+        if (search && !task._searchText.includes(search)) {
+            return false;
         }
 
         return true;
@@ -113,9 +143,8 @@ function filterCompletedTasks() {
     const search = currentSearch.toLowerCase();
     return allTasks.filter(task => {
         if (!completedTasks.has(task.name)) return false;
-        if (search) {
-            const haystack = `${task.name} ${task.task} ${task.area}`.toLowerCase();
-            if (!haystack.includes(search)) return false;
+        if (search && !task._searchText.includes(search)) {
+            return false;
         }
         return true;
     });
@@ -131,23 +160,28 @@ function escHtml(str) {
 }
 
 function renderStats() {
-    // Base set: tasks visible under current region + general toggle (no text search, no completion filter)
-    const regions = currentRegions;
-    const regionFiltered = allTasks.filter(task => {
-        if (!task.area) {
-            return showGeneralTasks;
-        }
-        return regions === null || regions.includes(task.area);
-    });
+    const regionSet = currentRegions !== null ? new Set(currentRegions) : null;
+    let total = 0;
+    let doneCount = 0;
+    let donePts = 0;
+    let leftPts = 0;
 
-    const total     = regionFiltered.length;
-    const done      = regionFiltered.filter(t =>  completedTasks.has(t.name));
-    const remaining = regionFiltered.filter(t => !completedTasks.has(t.name));
-    const donePts   = done.reduce((s, t) => s + (t.points || 0), 0);
-    const leftPts   = remaining.reduce((s, t) => s + (t.points || 0), 0);
+    for (const task of allTasks) {
+        if (!taskMatchesRegion(task, regionSet)) {
+            continue;
+        }
+
+        total += 1;
+        if (completedTasks.has(task.name)) {
+            doneCount += 1;
+            donePts += task._pointsValue;
+        } else {
+            leftPts += task._pointsValue;
+        }
+    }
 
     taskStats.innerHTML =
-        `<div class="stat-item">Remaining: <span>${remaining.length}</span> / ${total}</div>` +
+        `<div class="stat-item">Remaining: <span>${total - doneCount}</span> / ${total}</div>` +
         `<div class="stat-item">Pts done: <span>${donePts.toLocaleString()}</span></div>` +
         `<div class="stat-item">Pts left: <span>${leftPts.toLocaleString()}</span></div>`;
 }
@@ -160,9 +194,9 @@ function buildCard(task, isCompleted) {
         card.classList.add('task-card-selected');
     }
 
-    const searchTerm = task.strategy && task.strategy.search ? task.strategy.search.trim() : '';
-    const pointsStr  = task.strategy && task.strategy.points ? task.strategy.points.trim() : '';
-    const strictSearch = !(task.strategy && task.strategy.no_strict);
+    const searchTerm = task._strategySearch;
+    const pointsStr  = task._strategyPoints;
+    const strictSearch = task._strictSearch;
     const hasStrategy = !isCompleted && (searchTerm || pointsStr);
     if (hasStrategy) {
         card.classList.add('task-card-has-strategy');
@@ -201,7 +235,7 @@ function buildCard(task, isCompleted) {
         `<div class="task-card-meta">` +
             areaHtml +
             (searchTerm ? `<span class="task-card-strategy-hint">🔍 ${escHtml(searchTerm)}</span>` : '') +
-            (pointsStr  ? `<span class="task-card-strategy-hint">📍 ${parseStrategyPoints(pointsStr).length} pin(s)</span>` : '') +
+            (pointsStr  ? `<span class="task-card-strategy-hint">📍 ${task._strategyPinCount} pin(s)</span>` : '') +
             `<span class="task-card-completion">${escHtml(task.completion)} players</span>` +
         `</div>`;
 
@@ -336,6 +370,10 @@ taskSearch.addEventListener('input', e => {
 
 document.getElementById('task-show-general').addEventListener('change', e => {
     showGeneralTasks = e.target.checked;
+    if (taskSearchDebounce) {
+        clearTimeout(taskSearchDebounce);
+        taskSearchDebounce = null;
+    }
     renderTasks();
 });
 
@@ -355,8 +393,8 @@ document.getElementById('task-show-general').addEventListener('change', e => {
         if (allSpawnsData) return allSpawnsData;
         try {
             [allSpawnsData, allNamesData] = await Promise.all([
-                fetch('data_osrs/item_spawns.json').then(r => r.json()),
-                fetch('data_osrs/names.json').then(r => r.json()).catch(() => null)
+                fetchJsonCached('data_osrs/item_spawns.json'),
+                fetchJsonCached('data_osrs/names.json', { fallback: null })
             ]);
             nameToId = {};
             if (allNamesData) {
@@ -531,8 +569,7 @@ if (window._regionControl) {
 // ── Bootstrap ─────────────────────────────────────────────────────
 async function init() {
     try {
-        const resp = await fetch(TASKS_URL);
-        allTasks = await resp.json();
+        allTasks = (await fetchJsonCached(TASKS_URL)).map(normalizeTask);
     } catch (err) {
         taskList.innerHTML = '<div class="task-panel-empty">Failed to load tasks.</div>';
         console.error('LeagueTasks: failed to fetch tasks JSON', err);

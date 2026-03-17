@@ -1,5 +1,8 @@
 import "../leaflet.js";
 import "./leaflet.objects.js";
+import { fetchJsonCached } from "../data/json-cache.js";
+
+const UNIFIED_SEARCH_DEBOUNCE_MS = 180;
 
 export default void function (factory) {
     var L;
@@ -41,10 +44,8 @@ export default void function (factory) {
 
         getData: async function (name) {
             let [data, names] = await Promise.all([
-                fetch(`${this.options.folder}/item_spawns.json`)
-                    .then(res => res.json(), _ => { throw new Error(`Unable to fetch ${this.options.folder}/item_spawns.json`); }),
-                fetch(`${this.options.folder}/names.json`)
-                    .then(res => res.json(), _ => null)
+                fetchJsonCached(`${this.options.folder}/item_spawns.json`),
+                fetchJsonCached(`${this.options.folder}/names.json`, { fallback: null })
             ]);
 
             if (names) {
@@ -779,7 +780,7 @@ export default void function (factory) {
 
                 updateExternalLinks();
                 nameInput.addEventListener('input', updateExternalLinks);
-                this._map.on('move zoom', updateExternalLinks);
+                this._map.on('moveend zoomend', updateExternalLinks);
                 this._map.on('planechange', updateExternalLinks);
 
                 // Store references
@@ -795,12 +796,7 @@ export default void function (factory) {
 
                 // Search on input change
                 nameInput.addEventListener('input', (e) => {
-                    let term = e.target.value.trim();
-                    if (term.length >= 3) {
-                        this.performSearch(term);
-                    } else {
-                        this.clearSearch();
-                    }
+                    this.scheduleSearch(e.target.value.trim());
                 });
 
                 // Search on checkbox change
@@ -808,7 +804,7 @@ export default void function (factory) {
                     checkbox.addEventListener('change', () => {
                         let term = nameInput.value.trim();
                         if (term.length >= 3) {
-                            this.performSearch(term);
+                            this.scheduleSearch(term, true);
                         }
                     });
                 });
@@ -818,7 +814,7 @@ export default void function (factory) {
                     this._regionControl.onRegionChange(() => {
                         let currentTerm = nameInput.value.trim();
                         if (currentTerm.length >= 3) {
-                            this.performSearch(currentTerm);
+                            this.scheduleSearch(currentTerm, true);
                         }
                     });
                 }
@@ -838,7 +834,7 @@ export default void function (factory) {
 
                 // Instantiate search if urlparam data is present
                 if (searchTerm) {
-                    this.performSearch(searchTerm);
+                    this.scheduleSearch(searchTerm, true);
                 }
 
                 return container;
@@ -866,6 +862,9 @@ export default void function (factory) {
             _npcmaps: [],
             _storemaps: [],
             _spawnmaps: [],
+            _searchDebounce: null,
+            _searchRunId: 0,
+            _lastSearchSignature: '',
 
             // Programmatically trigger a search from external code (e.g. task panel).
             // Sets the search input value, optionally enables strict mode, then runs the search.
@@ -875,8 +874,40 @@ export default void function (factory) {
                     this._checkboxes.strict.checked = !!strict;
                 }
                 this._searchInput.value = term;
-                // Fire an input event so internal listeners update state
-                this._searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+                this.scheduleSearch(term.trim(), true);
+            },
+
+            scheduleSearch: function (term, immediate) {
+                if (this._searchDebounce) {
+                    clearTimeout(this._searchDebounce);
+                    this._searchDebounce = null;
+                }
+
+                if (term.length < 3) {
+                    this.clearSearch();
+                    return;
+                }
+
+                if (immediate) {
+                    this.performSearch(term);
+                    return;
+                }
+
+                this._searchDebounce = setTimeout(() => {
+                    this._searchDebounce = null;
+                    this.performSearch(term);
+                }, UNIFIED_SEARCH_DEBOUNCE_MS);
+            },
+
+            getSearchSignature: function (term, regions, strict) {
+                return JSON.stringify({
+                    term,
+                    strict,
+                    regions,
+                    shops: !!this._checkboxes.shops.checked,
+                    npcs: !!this._checkboxes.npcs.checked,
+                    objects: !!this._checkboxes.objects.checked,
+                });
             },
 
             performSearch: function (term) {
@@ -891,10 +922,19 @@ export default void function (factory) {
                 }
                 if (current) splitTerms.push(current);
                 const terms = splitTerms.map(t => t.trim()).filter(t => t.length >= 3);
-                if (terms.length === 0) return;
+                if (terms.length === 0) {
+                    this.clearSearch();
+                    return;
+                }
                 const n = terms.length;
                 let regions = this._regionControl ? this._regionControl.getEnabledRegions() : [];
                 const strict = this._checkboxes.strict.checked;
+                const searchSignature = this.getSearchSignature(term, regions, strict);
+                if (searchSignature === this._lastSearchSignature) {
+                    return;
+                }
+                this._lastSearchSignature = searchSignature;
+                const runId = ++this._searchRunId;
 
                 this.setSearchParams({ search: term });
 
@@ -913,6 +953,7 @@ export default void function (factory) {
                             regions: regions,
                             strict: strict,
                             onObjectsLoaded: (objects, data) => {
+                                if (runId !== this._searchRunId) return;
                                 allLocations.push(...data);
                                 if (--pending === 0) {
                                     const names = [...new Set(allLocations.map(o => o.page_name))].sort();
@@ -937,6 +978,7 @@ export default void function (factory) {
                             regions: regions,
                             strict: strict,
                             onNPCsLoaded: (npcs, data) => {
+                                if (runId !== this._searchRunId) return;
                                 allLocations.push(...data);
                                 if (--pending === 0) {
                                     const names = [...new Set(allLocations.map(o => o.page_name))].sort();
@@ -971,6 +1013,7 @@ export default void function (factory) {
                             regions: regions,
                             strict: strict,
                             onItemsLoaded: (items, itemMap) => {
+                                if (runId !== this._searchRunId) return;
                                 items.forEach(name => {
                                     if (!allShopMap.has(name)) { allShopItems.push(name); allShopMap.set(name, []); }
                                     itemMap.get(name).forEach(loc => allShopMap.get(name).push(loc));
@@ -989,6 +1032,7 @@ export default void function (factory) {
                             regions: regions,
                             strict: strict,
                             onSpawnsLoaded: (data) => {
+                                if (runId !== this._searchRunId) return;
                                 allSpawnData.push(...data);
                                 if (--spawnPending === 0) this.populateSpawnList(allSpawnData);
                             }
@@ -1002,6 +1046,12 @@ export default void function (factory) {
             },
 
             clearSearch: function () {
+                if (this._searchDebounce) {
+                    clearTimeout(this._searchDebounce);
+                    this._searchDebounce = null;
+                }
+                this._searchRunId += 1;
+                this._lastSearchSignature = '';
                 const clearLayers = arr => { arr.forEach(l => l.remove()); arr.length = 0; };
                 clearLayers(this._objectmaps);
                 clearLayers(this._npcmaps);

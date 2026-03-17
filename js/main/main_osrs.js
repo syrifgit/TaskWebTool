@@ -4,6 +4,7 @@ import "../../js/leaflet.js";
 import "../../js/layers.js";
 import "../../js/plugins/leaflet.plane.js";
 import "../../js/plugins/leaflet.displays.js";
+import { scheduleJsonWarmup } from "../../js/data/json-cache.js";
 
 
 void function (global) {
@@ -93,5 +94,14 @@ void function (global) {
     };
     runescape_map.on('planechange', () => explvLayer.redraw());
     explvLayer.addTo(runescape_map).bringToBack();
+
+    scheduleJsonWarmup([
+        { url: 'data_osrs/monsters.json' },
+        { url: 'data_osrs/scenery.json' },
+        { url: 'data_osrs/storeline.json' },
+        { url: 'data_osrs/item_spawns.json' },
+        { url: 'data_osrs/names.json', options: { fallback: null } },
+        { url: 'data_osrs/pickpocketable_npc_names.json' },
+    ]);
 }
 (this || window);
