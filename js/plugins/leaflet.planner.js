@@ -11,13 +11,13 @@ import { fetchJsonCached } from "../data/json-cache.js";
  *  - Coloured pins by task tier (Easy/Medium/Hard/Elite/Master)
  *  - Running cumulative points total next to each entry
  *  - Per-task comments / step notes
- *  - Polylines between pinned tasks (all | nearby | none)
+ *  - Polylines between pinned tasks (all | none)
  *  - Drag-and-drop reordering within the planner list
  *  - Drag tasks from the active list drop zone into planner
  */
 
 const PLANNER_KEY    = 'league_planner_v1';
-const NEARBY_WINDOW  = 2; // tasks either side to show when mode = 'nearby'
+const ROUTES_KEY     = 'league_planner_routes_v1';
 const DEFAULT_GROUP_NAME = 'Main';
 
 // ─── Tier colour helpers ──────────────────────────────────────────
@@ -36,13 +36,13 @@ function tierFor(points) {
 const VIRTUAL_COLOR = '#00cccc'; // teal – visually distinct from all tier colours
 
 // ─── State ────────────────────────────────────────────────────────
-let plannerGroups = [];  // [{ id, name, collapsed, items:[{ id, taskName, ... }] }]
+let plannerGroups = [];  // [{ id, name, collapsed, showPins, items:[{ id, taskName, ... }] }]
 let allTasksRef  = [];   // mirror of allTasks from leaflet.tasks.js
 let allTasksByName = new Map();
 let plannerMap   = null;
-let plannerLineMode    = 'all';      // 'all' | 'nearby' | 'none'
+let plannerLineMode    = 'all';      // 'all' | 'none'
 let plannerPinsVisible = true;
-let plannerSelectedId  = null;       // highlighted item id (for nearby mode)
+let plannerSelectedId  = null;       // highlighted item id
 let pinningMode        = false;
 let pinningItemId      = null;
 let plannerPinsLayer   = null;
@@ -54,6 +54,10 @@ let groupDragFromHandle = false; // true only when drag initiated from the handl
 let plannerAddSearchQuery = '';
 let plannerAddSearchShouldFocus = false;
 let plannerAddTargetGroupId = null;
+let userRoutes         = [];     // [{ id, name, groups }] — user-created plans persisted in localStorage
+let activeUserRouteId  = null;   // id of currently loaded user route (null = viewing a preset)
+let activeRouteName    = null;   // null = showing user route; string = read-only preset name
+let _presetManifest    = null;   // cached [{name,file}] from route_jsons/manifest.json
 
 function normalizePlannerItem(raw) {
     return {
@@ -68,6 +72,7 @@ function makePlannerGroup(name, items) {
         id: genId(),
         name: (name || '').trim() || DEFAULT_GROUP_NAME,
         collapsed: false,
+        showPins: true,
         items: (items || []).map(normalizePlannerItem),
     };
 }
@@ -78,6 +83,7 @@ function ensurePlannerGroups() {
         id: g && g.id ? g.id : genId(),
         name: (g && g.name ? g.name : DEFAULT_GROUP_NAME),
         collapsed: !!(g && g.collapsed),
+        showPins: !(g && g.showPins === false),
         items: Array.isArray(g && g.items) ? g.items.map(normalizePlannerItem) : [],
     }));
     if (plannerGroups.length === 0) {
@@ -115,28 +121,101 @@ function removeItemById(itemId) {
 }
 
 // ─── Persistence ──────────────────────────────────────────────────
-function loadPlanner() {
+// ─── Preset route manifest ───────────────────────────────────────
+async function loadPresetManifest() {
+    if (_presetManifest !== null) return _presetManifest;
     try {
-        const raw = localStorage.getItem(PLANNER_KEY);
-        if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-                plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, parsed)];
-            } else if (parsed && Array.isArray(parsed.groups)) {
-                plannerGroups = parsed.groups;
-            } else {
-                plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, [])];
-            }
-        }
+        _presetManifest = await fetchJsonCached('route_jsons/manifest.json', { fallback: [] });
     } catch (_) {
-        plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, [])];
+        _presetManifest = [];
+    }
+    return _presetManifest;
+}
+
+function applyPlanData(parsed) {
+    if (Array.isArray(parsed)) {
+        plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, parsed)];
+    } else if (parsed && Array.isArray(parsed.groups)) {
+        plannerGroups = parsed.groups;
+    } else {
+        return false;
     }
     ensurePlannerGroups();
+    return true;
+}
+
+// ─── Persistence ──────────────────────────────────────────────────
+function loadAllRoutes() {
+    userRoutes = [];
+    activeUserRouteId = null;
+    try {
+        const raw = localStorage.getItem(ROUTES_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.routes)) {
+                userRoutes = parsed.routes.map(r => ({
+                    id: String(r.id || genId()),
+                    name: String(r.name || 'My Plan'),
+                    groups: Array.isArray(r.groups) ? r.groups : [],
+                }));
+                activeUserRouteId = parsed.activeRouteId || null;
+                if (activeUserRouteId && !userRoutes.find(r => r.id === activeUserRouteId)) {
+                    activeUserRouteId = userRoutes[0] ? userRoutes[0].id : null;
+                }
+            }
+        }
+    } catch (_) {}
+    // Migrate old single-plan format if no routes saved yet
+    if (userRoutes.length === 0) {
+        try {
+            const oldRaw = localStorage.getItem(PLANNER_KEY);
+            if (oldRaw) {
+                const oldParsed = JSON.parse(oldRaw);
+                let groups = null;
+                if (Array.isArray(oldParsed)) {
+                    groups = [makePlannerGroup(DEFAULT_GROUP_NAME, oldParsed)];
+                } else if (oldParsed && Array.isArray(oldParsed.groups)) {
+                    const hasItems = oldParsed.groups.some(g => g.items && g.items.length > 0);
+                    if (hasItems) groups = oldParsed.groups;
+                }
+                if (groups) {
+                    const migrated = { id: genId(), name: 'My Plan', groups };
+                    userRoutes = [migrated];
+                    activeUserRouteId = migrated.id;
+                }
+            }
+        } catch (_) {}
+    }
+}
+
+function saveAllRoutes() {
+    try {
+        localStorage.setItem(ROUTES_KEY, JSON.stringify({
+            routes: userRoutes,
+            activeRouteId: activeUserRouteId,
+        }));
+    } catch (_) {}
+}
+
+function loadPlanner() {
+    let route = activeUserRouteId ? userRoutes.find(r => r.id === activeUserRouteId) : null;
+    if (!route && userRoutes.length > 0) {
+        route = userRoutes[0];
+        activeUserRouteId = route.id;
+    }
+    plannerGroups = route ? route.groups : [makePlannerGroup(DEFAULT_GROUP_NAME, [])];
+    ensurePlannerGroups();
+    if (route) route.groups = plannerGroups;
 }
 
 function savePlanner() {
+    if (activeRouteName) return; // viewing a read-only preset — don't overwrite user data
     ensurePlannerGroups();
-    try { localStorage.setItem(PLANNER_KEY, JSON.stringify({ version: 2, groups: plannerGroups })); } catch (_) {}
+    const route = activeUserRouteId ? userRoutes.find(r => r.id === activeUserRouteId) : null;
+    if (route) {
+        route.groups = plannerGroups;
+        saveAllRoutes();
+    }
 }
 
 function genId() {
@@ -206,14 +285,17 @@ async function loadSuggestedClusters(task) {
     const staticClusters = clusterStrategyPoints(task);
     if (staticClusters.length > 0) return staticClusters;
 
-    const searchTerm = task && task.strategy && task.strategy.search
-        ? task.strategy.search.trim() : '';
-    if (!searchTerm || searchTerm.toLowerCase() === 'n/a') return [];
+    const searchRaw = task && task.strategy && task.strategy.search ? task.strategy.search.trim() : '';
+    if (!searchRaw || searchRaw.toLowerCase() === 'n/a') return [];
 
-    const strict = !(task.strategy && task.strategy.no_strict);
-    const searchLower = searchTerm.toLowerCase();
-    const regions = window._regionControl ? window._regionControl.getEnabledRegions() : [];
-    const regionSet = regions.length > 0 ? new Set(regions.map(r => r.toLowerCase())) : null;
+    const strict = /^".*"$/.test(searchRaw);
+    const searchLower = (strict ? searchRaw.slice(1, -1) : searchRaw).toLowerCase();
+    if (!searchLower) return [];
+
+    const regions = window._getCurrentRegions ? window._getCurrentRegions() : null;
+    const regionSet = regions && Array.isArray(regions)
+        ? new Set(regions.map(r => String(r).toLowerCase()))
+        : null;
 
     const [monsters, spawns, scenery] = await Promise.all([
         _plannerFetchJson('data_osrs/monsters.json'),
@@ -379,60 +461,62 @@ function redrawMapOverlays() {
     if (plannerLinesLayer) { map.removeLayer(plannerLinesLayer); plannerLinesLayer = null; }
     if (plannerSuggLayer)  { map.removeLayer(plannerSuggLayer);  plannerSuggLayer  = null; }
 
-    const pinned = allPlannerItems()
-        .map((item, idx) => ({ item, idx, task: getTask(item.taskName) }))
+    const orderById = new Map(allPlannerItems().map((item, idx) => [item.id, idx]));
+    const pinned = plannerGroups
+        .flatMap(group => group.items.map(item => ({
+            group,
+            item,
+            idx: orderById.get(item.id) || 0,
+            task: getTask(item.taskName),
+        })))
         .filter(x => x.item.pinCoords);
 
     if (pinned.length === 0) return;
 
-    if (plannerPinsVisible) {
-    plannerPinsLayer = L.layerGroup();
+    let visiblePinned = pinned.filter(x => x.group.showPins);
+    if (plannerLineMode === 'none') visiblePinned = [];
 
-    pinned.forEach(({ item, idx, task }) => {
-        const isVirtual = !!item.virtual;
-        const pts   = isVirtual ? 0 : (task ? (task.points || 10) : 10);
-        const tier  = isVirtual ? { name: 'Custom step', color: VIRTUAL_COLOR } : tierFor(pts);
-        const displayName = isVirtual ? (item.customName || 'Unnamed step') : (task ? task.name : item.taskName);
-        const displayDesc = isVirtual ? (item.customDesc || '') : (task ? task.task : '');
-        const icon  = makePinIcon(tier.color, idx + 1);
-        if (!icon) return;
+    if (plannerPinsVisible && visiblePinned.length > 0) {
+        plannerPinsLayer = L.layerGroup();
 
-        const commentsHtml = item.comments.length
-            ? '<ul style="margin:4px 0 0 0;padding-left:16px;color:#c8b880;">'
-              + item.comments.map(c => `<li>${esc(c)}</li>`).join('') + '</ul>'
-            : '';
+        visiblePinned.forEach(({ item, idx, task }) => {
+            const isVirtual = !!item.virtual;
+            const pts   = isVirtual ? 0 : (task ? (task.points || 10) : 10);
+            const tier  = isVirtual ? { name: 'Custom step', color: VIRTUAL_COLOR } : tierFor(pts);
+            const displayName = isVirtual ? (item.customName || 'Unnamed step') : (task ? task.name : item.taskName);
+            const displayDesc = isVirtual ? (item.customDesc || '') : (task ? task.task : '');
+            const icon  = makePinIcon(tier.color, idx + 1);
+            if (!icon) return;
 
-        const marker = L.marker([item.pinCoords.lat, item.pinCoords.lng], { icon, zIndexOffset: 200 });
-        marker.bindPopup(
-            `<div class="osrs-popup-inner">` +
-            `<b>#${idx + 1} ${esc(displayName)}</b><br>` +
-            `<span style="color:${tier.color};font-weight:bold;">${tier.name}</span>` +
-            (isVirtual ? '' : ` · <span style="color:#e8d5a0;">${pts} pts</span>`) + `<br>` +
-            (displayDesc ? `<span style="color:#c8b880;">${esc(displayDesc)}</span>` : '') +
-            commentsHtml +
-            `</div>`,
-            { autoPan: false, className: 'osrs-popup' }
-        );
-        plannerPinsLayer.addLayer(marker);
-    });
+            const commentsHtml = item.comments.length
+                ? '<ul style="margin:4px 0 0 0;padding-left:16px;color:#c8b880;">'
+                  + item.comments.map(c => `<li>${esc(c)}</li>`).join('') + '</ul>'
+                : '';
+
+            const marker = L.marker([item.pinCoords.lat, item.pinCoords.lng], { icon, zIndexOffset: 200 });
+            marker.bindPopup(
+                `<div class="osrs-popup-inner">` +
+                `<b>#${idx + 1} ${esc(displayName)}</b><br>` +
+                `<span style="color:${tier.color};font-weight:bold;">${tier.name}</span>` +
+                (isVirtual ? '' : ` · <span style="color:#e8d5a0;">${pts} pts</span>`) + `<br>` +
+                (displayDesc ? `<span style="color:#c8b880;">${esc(displayDesc)}</span>` : '') +
+                commentsHtml +
+                `</div>`,
+                { autoPan: false, className: 'osrs-popup' }
+            );
+            plannerPinsLayer.addLayer(marker);
+        });
 
         plannerPinsLayer.addTo(map);
     } // end plannerPinsVisible
 
     // Lines
-    if (plannerLineMode !== 'none' && pinned.length >= 2) {
+    if (plannerLineMode !== 'none' && visiblePinned.length >= 2) {
         plannerLinesLayer = L.layerGroup();
 
         let pairs = [];
         if (plannerLineMode === 'all') {
-            for (let i = 0; i < pinned.length - 1; i++) pairs.push([pinned[i], pinned[i + 1]]);
-        } else if (plannerLineMode === 'nearby' && plannerSelectedId) {
-            const selIdx = pinned.findIndex(x => x.item.id === plannerSelectedId);
-            if (selIdx !== -1) {
-                const lo = Math.max(0, selIdx - NEARBY_WINDOW);
-                const hi = Math.min(pinned.length - 1, selIdx + NEARBY_WINDOW);
-                for (let i = lo; i < hi; i++) pairs.push([pinned[i], pinned[i + 1]]);
-            }
+            for (let i = 0; i < visiblePinned.length - 1; i++) pairs.push([visiblePinned[i], visiblePinned[i + 1]]);
         }
 
         pairs.forEach(([a, b]) => {
@@ -583,15 +667,33 @@ function renderPlanner() {
         const t = getTask(i.taskName);
         return s + (t ? (t.points || 10) : 10);
     }, 0);
+    const presets = _presetManifest || [];
+    const userRoutesOpts = userRoutes.length > 0
+        ? `<optgroup label="My Routes">` +
+          userRoutes.map(r =>
+              `<option value="user:${esc(r.id)}"${activeUserRouteId === r.id && !activeRouteName ? ' selected' : ''}>${esc(r.name)}</option>`
+          ).join('') +
+          `</optgroup>`
+        : '';
+    const presetOpts = presets.length > 0
+        ? `<optgroup label="Preset Routes">` +
+          presets.map(p =>
+              `<option value="preset:${esc(p.file)}"${activeRouteName === p.name ? ' selected' : ''}>${esc(p.name)}</option>`
+          ).join('') +
+          `</optgroup>`
+        : '';
     ctrl.innerHTML =
+        `<div class="planner-controls-row planner-route-row">` +
+            `<span class="planner-ctrl-label">Route:</span>` +
+            `<select id="planner-route-select" class="planner-route-select">${userRoutesOpts}${presetOpts}</select>` +
+        `</div>` +
         `<div class="planner-controls-row">` +
             `<span class="planner-ctrl-label">Lines:</span>` +
-            ['all','nearby','none'].map(m =>
+            ['all','none'].map(m =>
                 `<button class="planner-line-btn${plannerLineMode === m ? ' planner-line-btn-active' : ''}" data-mode="${m}">${m}</button>`
             ).join('') +
             `<span class="planner-ctrl-sep"></span>` +
             `<button class="planner-line-btn${plannerPinsVisible ? ' planner-line-btn-active' : ''}" id="planner-pins-toggle">Pins</button>` +
-            `<button class="planner-line-btn" id="planner-group-add">+ Group</button>` +
             `<span class="planner-ctrl-sep"></span>` +
             `<span class="planner-ctrl-label">${flatItems.length} tasks · ${pinnedCount} pinned · ${runningTotal} pts total</span>` +
         `</div>` +
@@ -599,6 +701,8 @@ function renderPlanner() {
             `<button class="planner-line-btn" id="planner-export-btn" title="Download planner as JSON">⬇ Export JSON</button>` +
             `<button class="planner-line-btn" id="planner-import-btn" title="Load planner from JSON file">⬆ Import JSON</button>` +
             `<input type="file" id="planner-import-input" accept=".json,application/json" style="display:none"/>` +
+            `<button class="planner-line-btn" id="planner-new-route-btn" title="Create a new empty route">+ New Route</button>` +
+            `<button class="planner-line-btn" id="planner-clear-btn" title="Clear all tasks from the current route">✕ Clear</button>` +
         `</div>`;
     ctrl.querySelectorAll && ctrl.querySelectorAll('.planner-line-btn[data-mode]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -607,6 +711,43 @@ function renderPlanner() {
             renderPlanner();
         });
     });
+    // Route selector
+    const routeSelect = ctrl.querySelector('#planner-route-select');
+    if (routeSelect) {
+        routeSelect.addEventListener('change', async () => {
+            const val = routeSelect.value;
+            if (val.startsWith('user:')) {
+                const id = val.slice(5);
+                const route = userRoutes.find(r => r.id === id);
+                if (!route) return;
+                activeUserRouteId = id;
+                activeRouteName = null;
+                plannerGroups = route.groups;
+                ensurePlannerGroups();
+                route.groups = plannerGroups;
+                saveAllRoutes();
+                redrawMapOverlays();
+                renderPlanner();
+            } else if (val.startsWith('preset:')) {
+                const file = val.slice(7);
+                const preset = (_presetManifest || []).find(p => p.file === file);
+                const name = preset ? preset.name : file;
+                try {
+                    const data = await fetchJsonCached(`route_jsons/${file}`);
+                    if (!applyPlanData(data)) { alert('Unrecognised plan format.'); return; }
+                    activeRouteName = name;
+                    redrawMapOverlays();
+                    renderPlanner();
+                } catch (e) {
+                    alert('Failed to load preset: ' + e.message);
+                }
+            }
+        });
+        if (!_presetManifest) {
+            loadPresetManifest().then(() => renderPlanner());
+        }
+    }
+
     const pinsToggle = ctrl.querySelector('#planner-pins-toggle');
     if (pinsToggle) {
         pinsToggle.addEventListener('click', () => {
@@ -615,19 +756,6 @@ function renderPlanner() {
             renderPlanner();
         });
     }
-    const addGroupBtn = ctrl.querySelector('#planner-group-add');
-    if (addGroupBtn) {
-        addGroupBtn.addEventListener('click', () => {
-            const name = (window.prompt('Group name?', '') || '').trim();
-            if (!name) return;
-            const newGroup = makePlannerGroup(name, []);
-            plannerGroups.push(newGroup);
-            plannerAddTargetGroupId = newGroup.id;
-            savePlanner();
-            renderPlanner();
-        });
-    }
-
     const exportBtn = ctrl.querySelector('#planner-export-btn');
     if (exportBtn) {
         exportBtn.addEventListener('click', () => {
@@ -655,16 +783,17 @@ function renderPlanner() {
             reader.onload = evt => {
                 try {
                     const parsed = JSON.parse(evt.target.result);
-                    // Accept { version:2, groups:[] } or legacy flat array
-                    if (Array.isArray(parsed)) {
-                        plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, parsed)];
-                    } else if (parsed && Array.isArray(parsed.groups)) {
-                        plannerGroups = parsed.groups;
-                    } else {
+                    if (!applyPlanData(parsed)) {
                         alert('Unrecognised planner file format.');
                         return;
                     }
-                    ensurePlannerGroups();
+                    activeRouteName = null;
+                    // Save into active user route, creating one first if none exists
+                    if (!activeUserRouteId || !userRoutes.find(r => r.id === activeUserRouteId)) {
+                        const nr = { id: genId(), name: 'Imported Plan', groups: plannerGroups };
+                        userRoutes.push(nr);
+                        activeUserRouteId = nr.id;
+                    }
                     savePlanner();
                     redrawMapOverlays();
                     renderPlanner();
@@ -676,8 +805,81 @@ function renderPlanner() {
             reader.readAsText(file);
         });
     }
+    const clearBtn = ctrl.querySelector('#planner-clear-btn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            const route = activeUserRouteId ? userRoutes.find(r => r.id === activeUserRouteId) : null;
+            const label = activeRouteName || (route && route.name) || 'this route';
+            if (!confirm(`Clear all tasks from "${label}"?`)) return;
+            plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, [])];
+            ensurePlannerGroups();
+            if (!activeRouteName && route) {
+                route.groups = plannerGroups;
+                saveAllRoutes();
+            }
+            redrawMapOverlays();
+            renderPlanner();
+        });
+    }
+    const newRouteBtn = ctrl.querySelector('#planner-new-route-btn');
+    if (newRouteBtn) {
+        newRouteBtn.addEventListener('click', () => {
+            const name = prompt('Route name:', `Route ${userRoutes.length + 1}`);
+            if (!name || !name.trim()) return;
+            const newRoute = { id: genId(), name: name.trim(), groups: [makePlannerGroup(DEFAULT_GROUP_NAME, [])] };
+            userRoutes.push(newRoute);
+            activeUserRouteId = newRoute.id;
+            activeRouteName = null;
+            plannerGroups = newRoute.groups;
+            ensurePlannerGroups();
+            newRoute.groups = plannerGroups;
+            saveAllRoutes();
+            redrawMapOverlays();
+            renderPlanner();
+        });
+    }
     container.appendChild(ctrl);
 
+    if (activeRouteName) {
+        const banner = document.createElement('div');
+        banner.className = 'planner-preset-banner';
+        banner.innerHTML =
+            `<span class="planner-preset-banner-label">Viewing: <b>${esc(activeRouteName)}</b></span>` +
+            `<button class="planner-preset-save-btn">&#128190; Save as My Plan</button>` +
+            `<button class="planner-preset-back-btn">&#8592; My Routes</button>`;
+        banner.querySelector('.planner-preset-save-btn').addEventListener('click', () => {
+            ensurePlannerGroups();
+            const existingRoute = activeUserRouteId ? userRoutes.find(r => r.id === activeUserRouteId) : null;
+            if (existingRoute) {
+                existingRoute.groups = plannerGroups;
+            } else {
+                const nr = { id: genId(), name: activeRouteName || 'My Plan', groups: plannerGroups };
+                userRoutes.push(nr);
+                activeUserRouteId = nr.id;
+            }
+            activeRouteName = null;
+            saveAllRoutes();
+            renderPlanner();
+        });
+        banner.querySelector('.planner-preset-back-btn').addEventListener('click', () => {
+            activeRouteName = null;
+            const route = activeUserRouteId ? userRoutes.find(r => r.id === activeUserRouteId) : null;
+            if (route) {
+                plannerGroups = route.groups;
+                ensurePlannerGroups();
+            } else if (userRoutes.length > 0) {
+                activeUserRouteId = userRoutes[0].id;
+                plannerGroups = userRoutes[0].groups;
+                ensurePlannerGroups();
+            } else {
+                plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, [])];
+                ensurePlannerGroups();
+            }
+            redrawMapOverlays();
+            renderPlanner();
+        });
+        container.appendChild(banner);
+    }
     if (flatItems.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'task-panel-empty';
@@ -731,12 +933,17 @@ function buildPlannerGroup(group, orderById, runPtsById) {
     const canRemove = plannerGroups.length > 1;
     const toggleLabel = group.collapsed ? '▸' : '▾';
     const toggleText = group.collapsed ? 'Show' : 'Hide';
+    const pinsChecked = group.showPins ? 'checked' : '';
     wrap.innerHTML =
         `<div class="planner-group-header">` +
             `<span class="planner-group-drag-handle" title="Drag to reorder group">⠿</span>` +
             `<button class="planner-group-toggle" title="Expand/collapse group">${toggleLabel}</button>` +
             `<input class="planner-group-name" value="${esc(group.name)}" aria-label="Group name"/>` +
             `<span class="planner-group-meta">${group.items.length} tasks · ${pinnedCount} pinned · ${groupPts} pts</span>` +
+            `<label class="planner-group-pin-toggle-wrap" title="Show pins from this group">` +
+                `<input type="checkbox" class="planner-group-pin-toggle" ${pinsChecked}>` +
+                `<span>Pins</span>` +
+            `</label>` +
             `<button class="planner-group-toggle-text" title="Expand/collapse group">${toggleText}</button>` +
             (canRemove ? `<button class="planner-group-remove" title="Delete group (moves tasks)">✕</button>` : '') +
         `</div>`;
@@ -745,6 +952,7 @@ function buildPlannerGroup(group, orderById, runPtsById) {
     const header = wrap.querySelector('.planner-group-header');
     const toggleBtn = wrap.querySelector('.planner-group-toggle');
     const toggleTextBtn = wrap.querySelector('.planner-group-toggle-text');
+    const pinsToggle = wrap.querySelector('.planner-group-pin-toggle');
     const nameInput = wrap.querySelector('.planner-group-name');
     const removeBtn = wrap.querySelector('.planner-group-remove');
 
@@ -766,9 +974,21 @@ function buildPlannerGroup(group, orderById, runPtsById) {
     });
 
     header.addEventListener('click', e => {
-        if (e.target.closest('.planner-group-name, .planner-group-remove, .planner-group-toggle, .planner-group-toggle-text, .planner-group-drag-handle')) return;
+        if (e.target.closest('.planner-group-name, .planner-group-remove, .planner-group-toggle, .planner-group-toggle-text, .planner-group-drag-handle, .planner-group-pin-toggle-wrap')) return;
         toggleGroupCollapsed();
     });
+
+    if (pinsToggle) {
+        pinsToggle.addEventListener('click', e => e.stopPropagation());
+        pinsToggle.addEventListener('change', e => {
+            const liveGroup = findGroupById(groupId);
+            if (!liveGroup) return;
+            liveGroup.showPins = !!e.target.checked;
+            savePlanner();
+            redrawMapOverlays();
+            renderPlanner();
+        });
+    }
 
     // ── Group reorder drag ───────────────────────────────────────
     const dragHandle = wrap.querySelector('.planner-group-drag-handle');
@@ -1031,7 +1251,7 @@ function buildPlannerCard(item, task, pts, runPts, orderNum) {
         card.classList.remove('planner-dragging');
     });
 
-    // ── Selection (for nearby lines) ─────────────────────────────
+    // ── Selection (for suggestion pins) ──────────────────────────
     card.addEventListener('click', e => {
         if (e.target.closest('button, input')) return;
         plannerSelectedId = (plannerSelectedId === item.id) ? null : item.id;
@@ -1121,7 +1341,9 @@ function buildAddSection() {
             `<input id="planner-virtual-name-input" class="planner-search-input" type="text" placeholder="Step name (e.g. Buy stew from shop)" autocomplete="off"/>` +
             `<input id="planner-virtual-desc-input" class="planner-search-input planner-virtual-desc-input" type="text" placeholder="Description (optional)" autocomplete="off"/>` +
             `<button id="planner-virtual-add-btn" class="planner-virtual-add-btn">+ Add custom step</button>` +
-        `</div>`;
+        `</div>` +
+        `<div class="planner-add-divider"></div>` +
+        `<button id="planner-group-add" class="planner-line-btn planner-group-add-btn">+ New Group</button>`;
 
     // ── League task search ────────────────────────────────────────
     const groupSelect = wrap.querySelector('#planner-target-group');
@@ -1238,6 +1460,20 @@ function buildAddSection() {
     virtualNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') createVirtualStep(); });
     virtualDescInput.addEventListener('keydown', e => { if (e.key === 'Enter') createVirtualStep(); });
 
+    // ── Add group ─────────────────────────────────────────────────
+    const addGroupBtn = wrap.querySelector('#planner-group-add');
+    if (addGroupBtn) {
+        addGroupBtn.addEventListener('click', () => {
+            const name = (window.prompt('Group name?', '') || '').trim();
+            if (!name) return;
+            const newGroup = makePlannerGroup(name, []);
+            plannerGroups.push(newGroup);
+            plannerAddTargetGroupId = newGroup.id;
+            savePlanner();
+            renderPlanner();
+        });
+    }
+
     return wrap;
 }
 
@@ -1314,8 +1550,36 @@ document.addEventListener('keydown', e => {
 });
 
 // ─── Bootstrap ────────────────────────────────────────────────────
-loadPlanner();
-setupTabSwitching();
+(async () => {
+    loadAllRoutes();
+    const manifest = await loadPresetManifest();
+    const defaultPreset = manifest && manifest[0];
+    if (userRoutes.length > 0) {
+        // User has saved routes — load the active one
+        loadPlanner();
+    } else if (defaultPreset) {
+        // No user routes yet — show the default preset
+        try {
+            const data = await fetchJsonCached(`route_jsons/${defaultPreset.file}`);
+            if (applyPlanData(data)) {
+                activeRouteName = defaultPreset.name;
+            } else {
+                plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, [])];
+                ensurePlannerGroups();
+            }
+        } catch (_) {
+            plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, [])];
+            ensurePlannerGroups();
+        }
+    } else {
+        plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, [])];
+        ensurePlannerGroups();
+    }
+    setupTabSwitching();
+    // Re-draw now that plannerGroups are populated
+    redrawMapOverlays();
+    renderPlanner();
+})();
 
 function initPlanner(map) {
     plannerMap = map;

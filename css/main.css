@@ -666,6 +666,47 @@ img.huechange { filter: hue-rotate(120deg); }
     gap: 5px;
     flex-wrap: wrap;
 }
+/* Route selector row */
+.planner-route-row { gap: 6px; }
+.planner-route-select {
+    flex: 1 1 auto;
+    background: #111;
+    border: 1px solid #3a2800;
+    border-radius: 3px;
+    color: #e8d5a0;
+    font-size: 12px;
+    padding: 3px 6px;
+    cursor: pointer;
+}
+.planner-route-select:focus { border-color: #ffd700; outline: none; }
+
+/* Preset-active banner */
+.planner-preset-banner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 5px 8px;
+    background: #1a1200;
+    border-bottom: 1px solid #3a2800;
+    font-size: 11px;
+    color: #a89060;
+}
+.planner-preset-banner-label { flex: 1 1 auto; }
+.planner-preset-save-btn,
+.planner-preset-back-btn {
+    font-size: 11px;
+    background-color: #1a1200;
+    border: 1px solid #3a2a00;
+    border-radius: 3px;
+    color: #8a7040;
+    padding: 2px 7px;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+}
+.planner-preset-save-btn:hover,
+.planner-preset-back-btn:hover { background-color: #2a2000; color: #c8a040; }
+
 .planner-ctrl-label {
     font-size: 11px;
     color: #a89060;
@@ -746,6 +787,20 @@ img.huechange { filter: hue-rotate(120deg); }
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+.planner-group-pin-toggle-wrap {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #a89060;
+    cursor: pointer;
+    user-select: none;
+}
+.planner-group-pin-toggle {
+    margin: 0;
+    accent-color: #ffd700;
 }
 .planner-group-remove {
     flex: 0 0 auto;
@@ -1120,6 +1175,11 @@ img.huechange { filter: hue-rotate(120deg); }
     transition: background-color 0.15s, color 0.15s;
 }
 .planner-virtual-add-btn:hover { background-color: #005555; color: #fff; }
+.planner-group-add-btn {
+    width: 100%;
+    text-align: center;
+    margin-top: 2px;
+}
 
 /* Virtual task cards */
 .planner-card-virtual {
