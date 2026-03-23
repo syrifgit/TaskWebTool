@@ -1259,6 +1259,72 @@ img.huechange { filter: hue-rotate(120deg); }
 }
 .planner-search-results::-webkit-scrollbar { width: 6px; }
 .planner-search-results::-webkit-scrollbar-track { background: #1a1a1a; }
+
+/* ─── Map right-click context menu ─────────────────────────────── */
+.planner-map-ctx-menu {
+    position: fixed;
+    z-index: 9999;
+    background: #1a1200;
+    border: 1px solid #5a3f00;
+    border-radius: 5px;
+    padding: 8px;
+    min-width: 240px;
+    max-width: 300px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.65);
+    font-size: 12px;
+    color: #e8d5a0;
+}
+.planner-ctx-section-label {
+    font-size: 10px;
+    color: #8a7040;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+}
+.planner-ctx-divider {
+    border: none;
+    border-top: 1px solid #3a2800;
+    margin: 6px 0;
+}
+.planner-ctx-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 2px;
+}
+.planner-ctx-input {
+    flex: 1 1 auto;
+    background: #111;
+    border: 1px solid #3a2800;
+    border-radius: 3px;
+    color: #e8d5a0;
+    font-size: 12px;
+    padding: 3px 6px;
+}
+.planner-ctx-input:focus { border-color: #ffd700; outline: none; }
+.planner-ctx-results {
+    max-height: 180px;
+    overflow-y: auto;
+    margin-top: 4px;
+}
+.planner-ctx-results::-webkit-scrollbar { width: 5px; }
+.planner-ctx-results::-webkit-scrollbar-track { background: #1a1a1a; }
+.planner-ctx-results::-webkit-scrollbar-thumb { background: #3a2800; border-radius: 3px; }
+.planner-ctx-result {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 4px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+.planner-ctx-result:hover { background: #2a1f00; }
+.planner-ctx-result-name {
+    flex: 1 1 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.planner-ctx-result-added { opacity: 0.45; pointer-events: none; }
 .planner-search-results::-webkit-scrollbar-thumb { background: #5a3f00; border-radius: 3px; }
 .planner-search-results::-webkit-scrollbar-thumb:hover { background: #ffd700; }
 .planner-search-result {

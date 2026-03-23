@@ -632,6 +632,107 @@ function cancelPinning() {
     updateStatusBanner(null);
 }
 
+// ─── Map context menu ─────────────────────────────────────────────
+let _mapContextMenuLatLng = null;
+
+function showMapContextMenu(latlng, clientX, clientY) {
+    hideMapContextMenu();
+    _mapContextMenuLatLng = latlng;
+
+    const menu = document.createElement('div');
+    menu.id = 'planner-map-ctx-menu';
+    menu.className = 'planner-map-ctx-menu';
+    menu.innerHTML =
+        '<div class="planner-ctx-section-label">Custom step</div>' +
+        '<div class="planner-ctx-row">' +
+            '<input id="planner-ctx-custom-input" class="planner-ctx-input" type="text" placeholder="Step name\u2026" autocomplete="off"/>' +
+            '<button class="planner-line-btn" id="planner-ctx-custom-add">+ Add</button>' +
+        '</div>' +
+        '<div class="planner-ctx-divider"></div>' +
+        '<div class="planner-ctx-section-label">Add task</div>' +
+        '<input id="planner-ctx-search-input" class="planner-ctx-input" type="text" placeholder="Search tasks\u2026" autocomplete="off"/>' +
+        '<div id="planner-ctx-search-results" class="planner-ctx-results"></div>';
+
+    menu.style.left = clientX + 'px';
+    menu.style.top  = clientY + 'px';
+    document.body.appendChild(menu);
+
+    // Nudge off-screen edges
+    requestAnimationFrame(() => {
+        const rect = menu.getBoundingClientRect();
+        if (rect.right  > window.innerWidth)  menu.style.left = (clientX - rect.width)  + 'px';
+        if (rect.bottom > window.innerHeight) menu.style.top  = (clientY - rect.height) + 'px';
+    });
+
+    const addItemWithPin = (item) => {
+        ensurePlannerGroups();
+        const group = findGroupById(plannerAddTargetGroupId) || plannerGroups[0];
+        if (!group) return;
+        item.pinCoords = { lat: latlng.lat, lng: latlng.lng };
+        group.items.push(item);
+        savePlanner();
+        redrawMapOverlays();
+        renderPlanner();
+        hideMapContextMenu();
+    };
+
+    const customInput = menu.querySelector('#planner-ctx-custom-input');
+    menu.querySelector('#planner-ctx-custom-add').addEventListener('click', () => {
+        const name = customInput.value.trim();
+        if (!name) return;
+        addItemWithPin({ id: genId(), virtual: true, customName: name, customDesc: '', comments: [] });
+    });
+    customInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter')  menu.querySelector('#planner-ctx-custom-add').click();
+        if (e.key === 'Escape') hideMapContextMenu();
+    });
+
+    const searchInput   = menu.querySelector('#planner-ctx-search-input');
+    const searchResults = menu.querySelector('#planner-ctx-search-results');
+    searchInput.addEventListener('input', () => _renderCtxSearchResults(searchInput.value, searchResults, addItemWithPin));
+    searchInput.addEventListener('keydown', e => { if (e.key === 'Escape') hideMapContextMenu(); });
+
+    requestAnimationFrame(() => customInput.focus());
+}
+
+function hideMapContextMenu() {
+    const existing = document.getElementById('planner-map-ctx-menu');
+    if (existing) existing.remove();
+    _mapContextMenuLatLng = null;
+}
+
+function _renderCtxSearchResults(query, container, onAdd) {
+    container.innerHTML = '';
+    const q = query.trim().toLowerCase();
+    if (!q || q.length < 2) return;
+    if (!allTasksRef || !allTasksRef.length) return;
+
+    const addedNames = new Set(allPlannerItems().filter(i => !i.virtual).map(i => i.taskName));
+    const regions    = window._getCurrentRegions ? window._getCurrentRegions() : null;
+    const regionSet  = regions && Array.isArray(regions)
+        ? new Set(regions.map(r => String(r).toLowerCase()))
+        : null;
+
+    const matches = allTasksRef.filter(t => {
+        if (regionSet && t.area && !regionSet.has(String(t.area).toLowerCase())) return false;
+        return `${t.name} ${t.task || ''} ${t.area || ''}`.toLowerCase().includes(q);
+    }).slice(0, 50);
+
+    matches.forEach(task => {
+        const tier = tierFor(task.points || 10);
+        const row  = document.createElement('div');
+        row.className = 'planner-ctx-result' + (addedNames.has(task.name) ? ' planner-ctx-result-added' : '');
+        row.innerHTML =
+            `<span class="planner-search-tier-dot" style="background:${tier.color}"></span>` +
+            `<span class="planner-ctx-result-name">${esc(task.name)}</span>` +
+            `<span class="planner-search-result-pts" style="color:${tier.color}">${task.points}pts</span>`;
+        row.addEventListener('click', () =>
+            onAdd({ id: genId(), taskName: task.name, comments: [] })
+        );
+        container.appendChild(row);
+    });
+}
+
 // ─── Status banner ────────────────────────────────────────────────
 function updateStatusBanner(msg) {
     const el = document.getElementById('planner-status');
@@ -1544,9 +1645,12 @@ function setupTabSwitching() {
     });
 }
 
-// ─── Escape to cancel pinning ─────────────────────────────────────
+// ─── Escape to cancel pinning / close context menu ────────────────
 document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && pinningMode) cancelPinning();
+    if (e.key === 'Escape') {
+        if (pinningMode) cancelPinning();
+        hideMapContextMenu();
+    }
 });
 
 // ─── Bootstrap ────────────────────────────────────────────────────
@@ -1583,6 +1687,18 @@ document.addEventListener('keydown', e => {
 
 function initPlanner(map) {
     plannerMap = map;
+
+    // Right-click on map → context menu
+    map.getContainer().addEventListener('contextmenu', (e) => {
+        if (pinningMode) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const latlng = map.mouseEventToLatLng(e);
+        showMapContextMenu(latlng, e.clientX, e.clientY);
+    });
+
+    // Any click on the map body (not inside the menu) dismisses the menu
+    map.getContainer().addEventListener('click', () => hideMapContextMenu());
 
     // Try to get allTasks; retry until leaflet.tasks.js populates it
     function tryGetTasks() {
