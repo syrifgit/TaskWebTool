@@ -666,10 +666,16 @@ function showMapContextMenu(latlng, clientX, clientY) {
 
     const addItemWithPin = (item) => {
         ensurePlannerGroups();
-        const group = findGroupById(plannerAddTargetGroupId) || plannerGroups[0];
-        if (!group) return;
         item.pinCoords = { lat: latlng.lat, lng: latlng.lng };
-        group.items.push(item);
+        // Insert after the currently selected item if one exists, otherwise append
+        const selCtx = plannerSelectedId ? findItemContext(plannerSelectedId) : null;
+        if (selCtx) {
+            selCtx.group.items.splice(selCtx.itemIdx + 1, 0, item);
+        } else {
+            const group = findGroupById(plannerAddTargetGroupId) || plannerGroups[0];
+            if (!group) return;
+            group.items.push(item);
+        }
         savePlanner();
         redrawMapOverlays();
         renderPlanner();
