@@ -521,6 +521,8 @@ function redrawMapOverlays() {
                 `</div>`,
                 { autoPan: false, className: 'osrs-popup' }
             );
+            // Clicking the pin opens the popup AND selects the item in the planner pane
+            marker.on('click', () => selectPlannerItem(item.id));
             plannerPinsLayer.addLayer(marker);
         });
 
@@ -1624,6 +1626,22 @@ function activatePlannerTab() {
     } else {
         renderPlanner();
     }
+}
+
+function selectPlannerItem(itemId) {
+    plannerSelectedId = itemId;
+    // Ensure the planner tab is visible, then scroll the card into view
+    const plannerTab = document.querySelector('.task-tab[data-tab="planner"]');
+    if (plannerTab && !plannerTab.classList.contains('task-tab-active')) {
+        plannerTab.click(); // renderPlanner() is called by the tab switch handler
+    } else {
+        renderPlanner();
+    }
+    // Scroll after a brief yield so the DOM has been rebuilt
+    setTimeout(() => {
+        const card = document.querySelector(`.planner-card[data-id="${CSS.escape(itemId)}"]`);
+        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
 }
 
 // ─── Tab integration ──────────────────────────────────────────────
