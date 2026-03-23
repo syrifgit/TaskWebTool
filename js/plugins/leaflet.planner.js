@@ -493,7 +493,24 @@ function redrawMapOverlays() {
                   + item.comments.map(c => `<li>${esc(c)}</li>`).join('') + '</ul>'
                 : '';
 
-            const marker = L.marker([item.pinCoords.lat, item.pinCoords.lng], { icon, zIndexOffset: 200 });
+            const marker = L.marker([item.pinCoords.lat, item.pinCoords.lng], {
+                icon,
+                zIndexOffset: 200,
+                draggable: isVirtual,
+            });
+            if (isVirtual) {
+                const capturedId = item.id;
+                marker.on('dragend', (e) => {
+                    const pos = e.target.getLatLng();
+                    // Always look up the live item by ID — the closure's `item` reference
+                    // may be stale if ensurePlannerGroups() rebuilt the array since creation.
+                    const ctx = findItemContext(capturedId);
+                    if (!ctx) return;
+                    ctx.item.pinCoords = { lat: pos.lat, lng: pos.lng };
+                    savePlanner();
+                    setTimeout(() => { redrawMapOverlays(); renderPlanner(); }, 0);
+                });
+            }
             marker.bindPopup(
                 `<div class="osrs-popup-inner">` +
                 `<b>#${idx + 1} ${esc(displayName)}</b><br>` +
