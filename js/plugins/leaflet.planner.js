@@ -54,7 +54,7 @@ let groupDragFromHandle = false; // true only when drag initiated from the handl
 let plannerAddSearchQuery = '';
 let plannerAddSearchShouldFocus = false;
 let plannerAddTargetGroupId = null;
-let userRoutes         = [];     // [{ id, name, groups }] — user-created plans persisted in localStorage
+let userRoutes         = [];     // [{ id, name, sections }] — user-created plans persisted in localStorage
 let activeUserRouteId  = null;   // id of currently loaded user route (null = viewing a preset)
 let activeRouteName    = null;   // null = showing user route; string = read-only preset name
 let _presetManifest    = null;   // cached [{name,file}] from route_jsons/manifest.json
@@ -134,8 +134,13 @@ async function loadPresetManifest() {
 
 function applyPlanData(parsed) {
     if (Array.isArray(parsed)) {
+        // v1: bare array of items
         plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, parsed)];
+    } else if (parsed && Array.isArray(parsed.sections)) {
+        // v3+: sections key
+        plannerGroups = parsed.sections;
     } else if (parsed && Array.isArray(parsed.groups)) {
+        // v2 backwards compat: groups key
         plannerGroups = parsed.groups;
     } else {
         return false;
@@ -156,7 +161,8 @@ function loadAllRoutes() {
                 userRoutes = parsed.routes.map(r => ({
                     id: String(r.id || genId()),
                     name: String(r.name || 'My Plan'),
-                    groups: Array.isArray(r.groups) ? r.groups : [],
+                    // support both 'sections' (v3+) and legacy 'groups' key
+                    sections: Array.isArray(r.sections) ? r.sections : (Array.isArray(r.groups) ? r.groups : []),
                 }));
                 activeUserRouteId = parsed.activeRouteId || null;
                 if (activeUserRouteId && !userRoutes.find(r => r.id === activeUserRouteId)) {
@@ -174,12 +180,16 @@ function loadAllRoutes() {
                 let groups = null;
                 if (Array.isArray(oldParsed)) {
                     groups = [makePlannerGroup(DEFAULT_GROUP_NAME, oldParsed)];
+                } else if (oldParsed && Array.isArray(oldParsed.sections)) {
+                    const hasItems = oldParsed.sections.some(g => g.items && g.items.length > 0);
+                    if (hasItems) groups = oldParsed.sections;
                 } else if (oldParsed && Array.isArray(oldParsed.groups)) {
+                    // legacy key
                     const hasItems = oldParsed.groups.some(g => g.items && g.items.length > 0);
                     if (hasItems) groups = oldParsed.groups;
                 }
                 if (groups) {
-                    const migrated = { id: genId(), name: 'My Plan', groups };
+                    const migrated = { id: genId(), name: 'My Plan', sections: groups };
                     userRoutes = [migrated];
                     activeUserRouteId = migrated.id;
                 }
@@ -203,9 +213,9 @@ function loadPlanner() {
         route = userRoutes[0];
         activeUserRouteId = route.id;
     }
-    plannerGroups = route ? route.groups : [makePlannerGroup(DEFAULT_GROUP_NAME, [])];
+    plannerGroups = route ? route.sections : [makePlannerGroup(DEFAULT_GROUP_NAME, [])];
     ensurePlannerGroups();
-    if (route) route.groups = plannerGroups;
+    if (route) route.sections = plannerGroups;
 }
 
 function savePlanner() {
@@ -213,7 +223,7 @@ function savePlanner() {
     ensurePlannerGroups();
     const route = activeUserRouteId ? userRoutes.find(r => r.id === activeUserRouteId) : null;
     if (route) {
-        route.groups = plannerGroups;
+        route.sections = plannerGroups;
         saveAllRoutes();
     }
 }
@@ -848,9 +858,9 @@ function renderPlanner() {
                 if (!route) return;
                 activeUserRouteId = id;
                 activeRouteName = null;
-                plannerGroups = route.groups;
+                plannerGroups = route.sections;
                 ensurePlannerGroups();
-                route.groups = plannerGroups;
+                route.sections = plannerGroups;
                 saveAllRoutes();
                 redrawMapOverlays();
                 renderPlanner();
@@ -886,7 +896,7 @@ function renderPlanner() {
     if (exportBtn) {
         exportBtn.addEventListener('click', () => {
             ensurePlannerGroups();
-            const data = JSON.stringify({ version: 2, groups: plannerGroups }, null, 2);
+            const data = JSON.stringify({ version: 3, taskType: 'LEAGUE_5', source: 'GrootsLeagueMap', sections: plannerGroups }, null, 2);
             const blob = new Blob([data], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -916,7 +926,7 @@ function renderPlanner() {
                     activeRouteName = null;
                     // Save into active user route, creating one first if none exists
                     if (!activeUserRouteId || !userRoutes.find(r => r.id === activeUserRouteId)) {
-                        const nr = { id: genId(), name: 'Imported Plan', groups: plannerGroups };
+                        const nr = { id: genId(), name: 'Imported Plan', sections: plannerGroups };
                         userRoutes.push(nr);
                         activeUserRouteId = nr.id;
                     }
@@ -940,7 +950,7 @@ function renderPlanner() {
             plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, [])];
             ensurePlannerGroups();
             if (!activeRouteName && route) {
-                route.groups = plannerGroups;
+                route.sections = plannerGroups;
                 saveAllRoutes();
             }
             redrawMapOverlays();
@@ -952,13 +962,13 @@ function renderPlanner() {
         newRouteBtn.addEventListener('click', () => {
             const name = prompt('Route name:', `Route ${userRoutes.length + 1}`);
             if (!name || !name.trim()) return;
-            const newRoute = { id: genId(), name: name.trim(), groups: [makePlannerGroup(DEFAULT_GROUP_NAME, [])] };
+            const newRoute = { id: genId(), name: name.trim(), sections: [makePlannerGroup(DEFAULT_GROUP_NAME, [])] };
             userRoutes.push(newRoute);
             activeUserRouteId = newRoute.id;
             activeRouteName = null;
-            plannerGroups = newRoute.groups;
+            plannerGroups = newRoute.sections;
             ensurePlannerGroups();
-            newRoute.groups = plannerGroups;
+            newRoute.sections = plannerGroups;
             saveAllRoutes();
             redrawMapOverlays();
             renderPlanner();
@@ -977,9 +987,9 @@ function renderPlanner() {
             ensurePlannerGroups();
             const existingRoute = activeUserRouteId ? userRoutes.find(r => r.id === activeUserRouteId) : null;
             if (existingRoute) {
-                existingRoute.groups = plannerGroups;
+                existingRoute.sections = plannerGroups;
             } else {
-                const nr = { id: genId(), name: activeRouteName || 'My Plan', groups: plannerGroups };
+                const nr = { id: genId(), name: activeRouteName || 'My Plan', sections: plannerGroups };
                 userRoutes.push(nr);
                 activeUserRouteId = nr.id;
             }
@@ -991,11 +1001,11 @@ function renderPlanner() {
             activeRouteName = null;
             const route = activeUserRouteId ? userRoutes.find(r => r.id === activeUserRouteId) : null;
             if (route) {
-                plannerGroups = route.groups;
+                plannerGroups = route.sections;
                 ensurePlannerGroups();
             } else if (userRoutes.length > 0) {
                 activeUserRouteId = userRoutes[0].id;
-                plannerGroups = userRoutes[0].groups;
+                plannerGroups = userRoutes[0].sections;
                 ensurePlannerGroups();
             } else {
                 plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, [])];
