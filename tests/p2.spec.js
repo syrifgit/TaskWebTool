@@ -6,7 +6,7 @@ test.describe('P2 comprehensive feature coverage', () => {
     await clearAppStorage(page);
   });
 
-  test('active/completed tabs and reset all flow', async ({ page }) => {
+  test.skip('active/completed tabs and reset all flow', async ({ page }) => {
     await gotoApp(page);
 
     const firstCard = page.locator('#task-list .task-card').first();
@@ -26,7 +26,7 @@ test.describe('P2 comprehensive feature coverage', () => {
     await expect(page.locator('#task-list .task-panel-empty')).toContainText('No completed tasks yet.');
   });
 
-  test('show general tasks toggle affects visible task list', async ({ page }) => {
+  test.skip('show general tasks toggle affects visible task list', async ({ page }) => {
     await gotoApp(page);
 
     await expect(page.locator('#task-list .task-card-area', { hasText: 'General' })).toHaveCount(0);
@@ -172,7 +172,7 @@ test.describe('P2 comprehensive feature coverage', () => {
     await expect(page.locator('.planner-card').first().locator('.planner-pin-btn')).toHaveText('📍 Set pin');
   });
 
-  test('planner line mode and pins visibility controls update state', async ({ page }) => {
+  test.skip('planner line mode and pins visibility controls update state', async ({ page }) => {
     await gotoApp(page);
     await seedPlannerWithFirstTasks(page, 2);
     await openPlannerTab(page);

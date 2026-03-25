@@ -1,5 +1,9 @@
 const { defineConfig, devices } = require('@playwright/test');
 
+const serverHost = process.env.PLAYWRIGHT_SERVER_HOST || '127.0.0.1';
+const serverPort = process.env.PLAYWRIGHT_SERVER_PORT || '4173';
+const baseURL = `http://${serverHost}:${serverPort}`;
+
 module.exports = defineConfig({
   testDir: './tests',
   fullyParallel: true,
@@ -8,7 +12,7 @@ module.exports = defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: [['html', { open: 'never' }], ['list']],
   use: {
-    baseURL: 'http://127.0.0.1:8000',
+    baseURL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure'
@@ -20,8 +24,13 @@ module.exports = defineConfig({
     }
   ],
   webServer: {
-    command: 'python server.py',
-    url: 'http://127.0.0.1:8000',
+    command: `python server.py`,
+    env: {
+      ...process.env,
+      SERVER_HOST: serverHost,
+      SERVER_PORT: serverPort
+    },
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
     stdout: 'pipe',
     stderr: 'pipe',
