@@ -28,21 +28,27 @@
       <div id="task-panel">
         <div id="task-panel-header">
           <span id="task-panel-title">League Tasks</span>
-          <div id="task-panel-tabs">
-            <button class="task-tab task-tab-active" data-tab="active">Active</button>
-            <button class="task-tab" data-tab="completed">Completed</button>
-            <button class="task-tab" data-tab="planner">Planner</button>
-          </div>
-          <input id="task-search" type="text" placeholder="Search tasks..." autocomplete="off" />
-          <label id="task-general-toggle">
-            <input type="checkbox" id="task-show-general" />
-            Show general tasks
-          </label>
-          <button id="task-spawns-toggle" class="task-spawns-btn">Show Item Spawns</button>
+          <button id="task-search-open-btn" class="task-search-open-btn" title="Search and browse league tasks">🔍 Task Search</button>
         </div>
+        <!-- Task search overlay (shown when Task Search button is clicked) -->
+        <div id="task-search-overlay" style="display:none;">
+          <div id="task-search-overlay-header">
+            <span class="task-search-overlay-title">Task Search</span>
+            <button id="task-search-close-btn" class="task-search-close-btn" title="Close">✕ Close</button>
+          </div>
+          <div id="task-search-overlay-controls">
+            <input id="task-search-input" type="text" placeholder="Search tasks..." autocomplete="off" />
+            <label id="task-general-toggle">
+              <input type="checkbox" id="task-show-general" />
+              Show general tasks
+            </label>
+          </div>
+          <div id="task-search-results"></div>
+        </div>
+        <!-- Completion stats (visible when planner shown) -->
         <div id="task-panel-stats"></div>
-        <div id="task-list"></div>
-        <div id="planner-container" style="display:none;">
+        <!-- Planner (always visible unless search overlay is open) -->
+        <div id="planner-container">
           <div id="planner-status" class="planner-status-banner" style="display:none;"></div>
           <div id="planner-list"></div>
         </div>
