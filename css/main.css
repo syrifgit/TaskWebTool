@@ -454,6 +454,39 @@ html, body {
     font-style: italic;
 }
 
+.task-card-skill-reqs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 3px 0 2px;
+}
+
+.task-card-skill-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 6px 1px 4px;
+    border-radius: 10px;
+    border: 1px solid #4a3200;
+    background-color: #1a1200;
+    color: #d8c080;
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 1;
+}
+
+.task-card-skill-icon {
+    width: 14px;
+    height: 14px;
+    image-rendering: pixelated;
+    display: block;
+}
+
+.task-card-skill-level {
+    min-width: 1.2em;
+    text-align: right;
+}
+
 .task-panel-empty {
     text-align: center;
     color: #5a4a20;
@@ -1058,6 +1091,39 @@ img.huechange { filter: hue-rotate(120deg); }
     color: #c8b880;
     line-height: 1.4;
     margin-bottom: 4px;
+}
+
+.planner-card-skill-reqs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin: 0 0 4px;
+}
+
+.planner-card-skill-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 6px 1px 4px;
+    border-radius: 10px;
+    border: 1px solid #3a2800;
+    background-color: #1a1200;
+    color: #d8c080;
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 1;
+}
+
+.planner-card-skill-icon {
+    width: 13px;
+    height: 13px;
+    image-rendering: pixelated;
+    display: block;
+}
+
+.planner-card-skill-level {
+    min-width: 1.2em;
+    text-align: right;
 }
 
 /* Suggested locations from strategy.points */

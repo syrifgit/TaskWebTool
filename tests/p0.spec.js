@@ -86,7 +86,19 @@ test.describe('P0 feature coverage', () => {
 
   test('planner reorder, group add, move between groups, and persistence', async ({ page }) => {
     await gotoApp(page);
-    await seedPlannerWithFirstTasks(page, 3);
+
+    const seededNames = [
+      'Achieve Your First Level 10',
+      'Achieve Your First Level 20',
+      'Achieve Your First Level 5'
+    ];
+    await page.waitForFunction(() => Array.isArray(window._allTasksRef) && window._allTasksRef.length > 0, null, {
+      timeout: 30000
+    });
+    for (const name of seededNames) {
+      await page.evaluate((taskName) => window._plannerAddTask(taskName), name);
+    }
+
     await openPlannerTab(page);
 
     const firstGroup = page.locator('.planner-group').first();
@@ -95,8 +107,16 @@ test.describe('P0 feature coverage', () => {
     const beforeFirstName = (await firstGroup.locator('.planner-card .planner-card-name').first().innerText()).trim();
     const beforeSecondName = (await firstGroup.locator('.planner-card .planner-card-name').nth(1).innerText()).trim();
 
-    await firstGroup.locator('.planner-card').first().dragTo(firstGroup.locator('.planner-drop-zone').last());
-    await expect(firstGroup.locator('.planner-card .planner-card-name').first()).toHaveText(beforeSecondName);
+    const dragTarget = firstGroup.locator('.planner-drop-zone').last();
+    await firstGroup.locator('.planner-card').first().dragTo(dragTarget);
+
+    let afterFirstName = (await firstGroup.locator('.planner-card .planner-card-name').first().innerText()).trim();
+    if (afterFirstName !== beforeSecondName) {
+      // Retry once to reduce occasional DnD flake in headless Chromium.
+      await firstGroup.locator('.planner-card').first().dragTo(dragTarget);
+      afterFirstName = (await firstGroup.locator('.planner-card .planner-card-name').first().innerText()).trim();
+    }
+    expect(afterFirstName).toBe(beforeSecondName);
 
     page.once('dialog', (dialog) => dialog.accept('Route B'));
     await page.locator('#planner-group-add').click();

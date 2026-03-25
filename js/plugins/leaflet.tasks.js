@@ -9,9 +9,18 @@ import { fetchJsonCached } from "../data/json-cache.js";
  * Completed-task tracking persists in localStorage and is shown on planner cards.
  */
 
-const TASKS_URL = 'data_osrs/Raging_Echoes_League-Tasks.json';
+const TASKS_URL = 'https://raw.githubusercontent.com/syrifgit/full-task-scraper/refs/heads/main/generated/league-5-raging-echoes/LEAGUE_5.full.json';
+const TASK_STRATEGY_URL = 'data_osrs/strategy.json';
 const STORAGE_KEY = 'league_tasks_completed';
 const TASK_SEARCH_DEBOUNCE_MS = 100;
+
+const TIER_POINTS = {
+    1: 10,
+    2: 40,
+    3: 80,
+    4: 200,
+    5: 400,
+};
 
 let allTasks = [];
 let taskSearchQuery = '';
@@ -48,16 +57,125 @@ function parseStrategyPoints(pointsStr) {
     return coords;
 }
 
-function normalizeTask(task) {
-    const strategy = task.strategy || null;
+const SKILL_NAME_MAP = {
+    AGILITY: 'Agility',
+    ATTACK: 'Attack',
+    CONSTRUCTION: 'Construction',
+    COOKING: 'Cooking',
+    CRAFTING: 'Crafting',
+    DEFENCE: 'Defence',
+    FARMING: 'Farming',
+    FIREMAKING: 'Firemaking',
+    FISHING: 'Fishing',
+    FLETCHING: 'Fletching',
+    HERBLORE: 'Herblore',
+    HITPOINTS: 'Hitpoints',
+    HUNTER: 'Hunter',
+    MAGIC: 'Magic',
+    MINING: 'Mining',
+    PRAYER: 'Prayer',
+    RANGED: 'Ranged',
+    RUNECRAFT: 'Runecraft',
+    RUNECRAFTING: 'Runecraft',
+    SLAYER: 'Slayer',
+    SMITHING: 'Smithing',
+    STRENGTH: 'Strength',
+    THIEVING: 'Thieving',
+    WOODCUTTING: 'Woodcutting',
+};
+
+function displaySkillName(value) {
+    const key = String(value ?? '').trim().toUpperCase();
+    if (!key) return '';
+    if (SKILL_NAME_MAP[key]) return SKILL_NAME_MAP[key];
+    return key.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function normalizeSkills(skills) {
+    if (!Array.isArray(skills)) return [];
+    return skills
+        .map(entry => {
+            const skill = displaySkillName(entry?.skill);
+            const level = Number(entry?.level);
+            if (!skill || !Number.isFinite(level)) return null;
+            return {
+                skill,
+                level,
+                iconUrl: `https://oldschool.runescape.wiki/images/${skill.replace(/ /g, '_')}_icon.png`,
+            };
+        })
+        .filter(Boolean);
+}
+
+function normalizeArea(area) {
+    const value = String(area ?? '').trim();
+    if (!value) return '';
+    if (value.toLowerCase() === 'global') return '';
+    return value;
+}
+
+function normalizeCompletion(task) {
+    if (typeof task.completion === 'string' && task.completion.trim()) {
+        return task.completion.trim();
+    }
+    const pct = Number(task.completionPercent);
+    if (Number.isFinite(pct)) {
+        return `${pct.toFixed(1)}%`;
+    }
+    return '0.0%';
+}
+
+function pointsForTask(task) {
+    const explicit = Number(task.points);
+    if (Number.isFinite(explicit) && explicit > 0) {
+        return explicit;
+    }
+    const tierNum = Number(task.tier);
+    if (Number.isFinite(tierNum) && TIER_POINTS[tierNum]) {
+        return TIER_POINTS[tierNum];
+    }
+    const tierName = String(task.tierName ?? '').trim().toLowerCase();
+    if (tierName === 'easy') return 10;
+    if (tierName === 'medium') return 40;
+    if (tierName === 'hard') return 80;
+    if (tierName === 'elite') return 200;
+    if (tierName === 'master') return 400;
+    return 0;
+}
+
+function normalizeTask(rawTask, strategyMap) {
+    const structId = Number(rawTask.structId ?? rawTask.structID ?? rawTask.id ?? rawTask.taskId);
+    const strategy = Number.isFinite(structId) ? (strategyMap[String(structId)] || null) : null;
+    const name = String(rawTask.name ?? strategy?.taskName ?? '').trim();
+    const description = String(rawTask.description ?? rawTask.task ?? '').trim();
+    const area = normalizeArea(rawTask.area);
+    const completion = normalizeCompletion(rawTask);
+    const points = pointsForTask(rawTask);
+    const requirements = String(rawTask.requirements ?? 'N/A').trim() || 'N/A';
+    const wikiNotes = String(rawTask.wikiNotes ?? '').trim();
+    const skills = normalizeSkills(rawTask.skills);
     const strategySearch = strategy && strategy.search ? strategy.search.trim() : '';
     const strategyPoints = strategy && strategy.points ? strategy.points.trim() : '';
     const parsedStrategyPoints = strategyPoints ? parseStrategyPoints(strategyPoints) : [];
 
     return {
-        ...task,
-        _searchText: `${task.name ?? ''} ${task.task ?? ''} ${task.area ?? ''}`.toLowerCase(),
-        _pointsValue: Number(task.points) || 0,
+        taskId: Number.isFinite(structId) ? structId : null,
+        name,
+        task: description,
+        area,
+        points,
+        completion,
+        requirements,
+        wikiNotes,
+        skills,
+        category: rawTask.category ?? '',
+        skill: rawTask.skill ?? '',
+        tier: rawTask.tier ?? null,
+        tierName: rawTask.tierName ?? '',
+        sortId: rawTask.sortId ?? null,
+        strategy,
+        _searchText: `${name} ${description} ${wikiNotes} ${area} ${rawTask.category ?? ''} ${rawTask.skill ?? ''}`.toLowerCase(),
+        _pointsValue: Number(points) || 0,
         _strategySearch: strategySearch,
         _strategyPoints: strategyPoints,
         _strategyPinCount: parsedStrategyPoints.length,
@@ -183,6 +301,17 @@ function buildCard(task) {
         ? `<span class="task-card-area">${escHtml(task.area)}</span>`
         : `<span class="task-card-area" style="color:#7a6840;border-color:#2a2000;">General</span>`;
 
+    const skillReqHtml = Array.isArray(task.skills) && task.skills.length > 0
+        ? `<div class="task-card-skill-reqs">` +
+          task.skills.map(s =>
+              `<span class="task-card-skill-chip" title="${escHtml(s.skill)} ${s.level}">` +
+                  `<img class="task-card-skill-icon" src="${escHtml(s.iconUrl)}" alt="${escHtml(s.skill)} icon" loading="lazy"/>` +
+                  `<span class="task-card-skill-level">${s.level}</span>` +
+              `</span>`
+          ).join('') +
+        `</div>`
+        : '';
+
     const reqHtml = (task.requirements && task.requirements !== 'N/A')
         ? `<div class="task-card-requirements">Req: ${escHtml(task.requirements)}</div>`
         : '';
@@ -203,6 +332,7 @@ function buildCard(task) {
             planBtnHtml +
         `</div>` +
         `<div class="task-card-desc">${escHtml(task.task)}</div>` +
+        skillReqHtml +
         reqHtml +
         `<div class="task-card-meta">` +
             areaHtml +
@@ -566,11 +696,26 @@ if (window._regionControl) {
 // ── Bootstrap ─────────────────────────────────────────────────────
 async function init() {
     try {
-        allTasks = (await fetchJsonCached(TASKS_URL)).map(normalizeTask);
+        const [tasksData, strategyData] = await Promise.all([
+            fetchJsonCached(TASKS_URL),
+            fetchJsonCached(TASK_STRATEGY_URL, { fallback: {} }),
+        ]);
+
+        const taskList = Array.isArray(tasksData)
+            ? tasksData
+            : (Array.isArray(tasksData?.tasks) ? tasksData.tasks : []);
+
+        const strategyMap = strategyData && typeof strategyData === 'object'
+            ? strategyData
+            : {};
+
+        allTasks = taskList
+            .map(task => normalizeTask(task, strategyMap))
+            .filter(task => task.name && task.taskId !== null);
     } catch (err) {
         const resultsEl = document.getElementById('task-search-results');
         if (resultsEl) resultsEl.innerHTML = '<div class="task-panel-empty">Failed to load tasks.</div>';
-        console.error('LeagueTasks: failed to fetch tasks JSON', err);
+        console.error('LeagueTasks: failed to fetch tasks/strategy JSON', err);
         return;
     }
     renderStats();

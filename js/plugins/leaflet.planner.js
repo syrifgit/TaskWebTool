@@ -228,6 +228,21 @@ function savePlanner() {
     }
 }
 
+function buildExportSections() {
+    ensurePlannerGroups();
+    return plannerGroups.map(group => ({
+        ...group,
+        items: group.items.map(item => {
+            if (item.virtual) return { ...item };
+            const task = getTask(item.taskName);
+            const out = { ...item };
+            delete out.id;
+            out.taskId = task && task.taskId != null ? task.taskId : null;
+            return out;
+        }),
+    }));
+}
+
 function genId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
@@ -419,6 +434,18 @@ function buildSuggestionsHtml(item, task) {
         && task.strategy.points.trim().toLowerCase() !== 'n/a';
     if (!hasSearch && !hasPoints) return '';
     return '<div class="planner-card-suggestions"><span class="planner-sugg-label">Suggested locations:</span><span class="planner-sugg-loading">⟳</span></div>';
+}
+
+function buildPlannerSkillReqsHtml(task) {
+    if (!task || !Array.isArray(task.skills) || task.skills.length === 0) return '';
+    return `<div class="planner-card-skill-reqs">` +
+        task.skills.map(s =>
+            `<span class="planner-card-skill-chip" title="${esc(s.skill)} ${s.level}">` +
+                `<img class="planner-card-skill-icon" src="${esc(s.iconUrl || '')}" alt="${esc(s.skill)} icon" loading="lazy"/>` +
+                `<span class="planner-card-skill-level">${s.level}</span>` +
+            `</span>`
+        ).join('') +
+    `</div>`;
 }
 
 // ─── HTML escaping ────────────────────────────────────────────────
@@ -750,7 +777,7 @@ function _renderCtxSearchResults(query, container, onAdd) {
 
     const matches = allTasksRef.filter(t => {
         if (regionSet && t.area && !regionSet.has(String(t.area).toLowerCase())) return false;
-        return `${t.name} ${t.task || ''} ${t.area || ''}`.toLowerCase().includes(q);
+        return `${t.name} ${t.task || ''} ${t.wikiNotes || ''} ${t.area || ''}`.toLowerCase().includes(q);
     }).slice(0, 50);
 
     matches.forEach(task => {
@@ -895,8 +922,8 @@ function renderPlanner() {
     const exportBtn = ctrl.querySelector('#planner-export-btn');
     if (exportBtn) {
         exportBtn.addEventListener('click', () => {
-            ensurePlannerGroups();
-            const data = JSON.stringify({ version: 3, taskType: 'LEAGUE_5', source: 'GrootsLeagueMap', sections: plannerGroups }, null, 2);
+            const sections = buildExportSections();
+            const data = JSON.stringify({ version: 3, taskType: 'LEAGUE_5', source: 'GrootsLeagueMap', sections }, null, 2);
             const blob = new Blob([data], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -1337,6 +1364,7 @@ function buildPlannerCard(item, task, pts, runPts, orderNum) {
         (isVirtual
             ? `<input class="planner-virtual-desc" value="${esc(item.customDesc || '')}" placeholder="Description (optional)..." data-id="${item.id}"/>`
             : (task ? `<div class="planner-card-desc">${esc(task.task)}</div>` : '')) +
+        (isVirtual ? '' : buildPlannerSkillReqsHtml(task)) +
         buildSuggestionsHtml(item, task) +
         `<div class="planner-card-pin-row">` +
             `<button class="planner-pin-btn${item.pinCoords ? ' planner-pin-set' : ''}" data-id="${item.id}">${pinLabel}</button>` +
@@ -1541,7 +1569,7 @@ function buildAddSection() {
                 if (t.area && !regions.includes(t.area)) return false;
             }
             if (existingTaskNames.has(t.name)) return false;
-            const hay = `${t.name} ${t.task} ${t.area || ''}`.toLowerCase();
+            const hay = `${t.name} ${t.task || ''} ${t.wikiNotes || ''} ${t.area || ''}`.toLowerCase();
             return hay.includes(q);
         }).sort((a, b) => {
             const pct = s => parseFloat((s && s.completion || '0').replace('%', '')) || 0;
