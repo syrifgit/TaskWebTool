@@ -3,10 +3,10 @@
 import { fetchJsonCached } from "../data/json-cache.js";
 
 /**
- * League Tasks Panel
- * Renders a full-height task list to the right of the map,
- * filtered by the existing region filter control.
- * Supports marking tasks complete with a two-tab view.
+ * League Tasks — Search overlay + item spawns toggle
+ * Active/Completed tabs removed; tasks are searched via an overlay
+ * opened by the "Task Search" button in the panel header.
+ * Completed-task tracking persists in localStorage and is shown on planner cards.
  */
 
 const TASKS_URL = 'data_osrs/Raging_Echoes_League-Tasks.json';
@@ -14,11 +14,10 @@ const STORAGE_KEY = 'league_tasks_completed';
 const TASK_SEARCH_DEBOUNCE_MS = 100;
 
 let allTasks = [];
-let currentSearch = '';
+let taskSearchQuery = '';
 let currentRegions = null;
-let showGeneralTasks = false;
+let showGeneralTasks = true;
 let selectedTaskName = null;
-let activeTab = 'active'; // 'active' | 'completed'
 let taskPointsLayer = null; // L.LayerGroup of strategy point markers
 let taskSearchDebounce = null;
 let taskPointIcon = null;
@@ -33,6 +32,10 @@ try {
 function saveCompleted() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(completedTasks))); } catch (e) { /* storage unavailable */ }
 }
+
+// Expose globally for planner plugin
+window._completedTasks = completedTasks;
+window._saveCompleted = saveCompleted;
 
 // ── Strategy point markers ────────────────────────────────────────
 function parseStrategyPoints(pointsStr) {
@@ -115,40 +118,7 @@ function drawTaskPoints(task) {
 }
 
 // ── DOM references ────────────────────────────────────────────────
-const taskList   = document.getElementById('task-list');
-const taskStats  = document.getElementById('task-panel-stats');
-const taskSearch = document.getElementById('task-search');
-
-// ── Filtering ─────────────────────────────────────────────────────
-function filterActiveTasks() {
-    const search = currentSearch.toLowerCase();
-    const regionSet = currentRegions !== null ? new Set(currentRegions) : null;
-
-    return allTasks.filter(task => {
-        if (completedTasks.has(task.name)) return false;
-
-        if (!taskMatchesRegion(task, regionSet)) {
-            return false;
-        }
-
-        if (search && !task._searchText.includes(search)) {
-            return false;
-        }
-
-        return true;
-    });
-}
-
-function filterCompletedTasks() {
-    const search = currentSearch.toLowerCase();
-    return allTasks.filter(task => {
-        if (!completedTasks.has(task.name)) return false;
-        if (search && !task._searchText.includes(search)) {
-            return false;
-        }
-        return true;
-    });
-}
+const taskStats = document.getElementById('task-panel-stats');
 
 // ── Rendering helpers ─────────────────────────────────────────────
 function escHtml(str) {
@@ -160,6 +130,7 @@ function escHtml(str) {
 }
 
 function renderStats() {
+    if (!taskStats) return;
     const regionSet = currentRegions !== null ? new Set(currentRegions) : null;
     let total = 0;
     let doneCount = 0;
@@ -167,10 +138,7 @@ function renderStats() {
     let leftPts = 0;
 
     for (const task of allTasks) {
-        if (!taskMatchesRegion(task, regionSet)) {
-            continue;
-        }
-
+        if (!taskMatchesRegion(task, regionSet)) continue;
         total += 1;
         if (completedTasks.has(task.name)) {
             doneCount += 1;
@@ -186,11 +154,16 @@ function renderStats() {
         `<div class="stat-item">Pts left: <span>${leftPts.toLocaleString()}</span></div>`;
 }
 
-function buildCard(task, isCompleted) {
+// Expose so planner can refresh stats after toggling completion
+window._renderStats = renderStats;
+
+// ── Task search card builder ───────────────────────────────────────
+function buildCard(task) {
+    const isCompleted = completedTasks.has(task.name);
     const card = document.createElement('div');
     card.className = 'task-card' + (isCompleted ? ' task-card-completed' : '');
 
-    if (!isCompleted && task.name === selectedTaskName) {
+    if (task.name === selectedTaskName) {
         card.classList.add('task-card-selected');
     }
 
@@ -219,9 +192,8 @@ function buildCard(task, isCompleted) {
             `<input type="checkbox" class="task-card-checkbox" data-name="${escHtml(task.name)}" ${isCompleted ? 'checked' : ''} />` +
         `</label>`;
 
-    const planBtnHtml = !isCompleted
-        ? `<button class="task-card-plan-btn" data-name="${escHtml(task.name)}" onclick="event.stopPropagation();" title="Add to planner">📋</button>`
-        : '';
+    const planBtnHtml =
+        `<button class="task-card-plan-btn" data-name="${escHtml(task.name)}" onclick="event.stopPropagation();" title="Add to planner">📋</button>`;
 
     card.innerHTML =
         `<div class="task-card-header">` +
@@ -239,13 +211,15 @@ function buildCard(task, isCompleted) {
             `<span class="task-card-completion">${escHtml(task.completion)} players</span>` +
         `</div>`;
 
-    // Plan button
+    // Plan button — always present now
+    card.querySelector('.task-card-plan-btn')?.addEventListener('click', e => {
+        e.stopPropagation();
+        if (window._plannerAddTask) window._plannerAddTask(task.name);
+        renderSearchResults();
+    });
+
+    // Drag into planner drop zones
     if (!isCompleted) {
-        card.querySelector('.task-card-plan-btn')?.addEventListener('click', e => {
-            e.stopPropagation();
-            if (window._plannerAddTask) window._plannerAddTask(task.name);
-        });
-        // Make active cards draggable into the planner
         card.draggable = true;
         card.addEventListener('dragstart', e => {
             e.dataTransfer.effectAllowed = 'copy';
@@ -253,7 +227,7 @@ function buildCard(task, isCompleted) {
         });
     }
 
-    // Checkbox toggle
+    // Checkbox toggle — mark complete/incomplete
     card.querySelector('.task-card-checkbox').addEventListener('change', e => {
         const name = e.target.dataset.name;
         if (e.target.checked) {
@@ -266,20 +240,20 @@ function buildCard(task, isCompleted) {
             completedTasks.delete(name);
         }
         saveCompleted();
-        updateTabBadges();
-        renderTasks();
+        renderStats();
+        if (window._renderPlanner) window._renderPlanner();
+        renderSearchResults();
     });
 
-    // Card body click (selection + strategy) — only on active tab
+    // Card body click — strategy search/pins (only for non-completed tasks)
     if (!isCompleted) {
         card.addEventListener('click', () => {
             const wasSelected = selectedTaskName === task.name;
             selectedTaskName = wasSelected ? null : task.name;
-            clearTaskPoints(); // always clear previous pins on any click
-            // Always clear search first, then apply new task's strategy if selecting
+            clearTaskPoints();
             const ctrl = window._unifiedSearch;
             if (ctrl && ctrl.triggerSearch) ctrl.triggerSearch('', false);
-            renderTasks();
+            renderSearchResults();
             if (!wasSelected) {
                 if (searchTerm && ctrl && ctrl.triggerSearch) ctrl.triggerSearch(searchTerm, strictSearch);
                 if (pointsStr) drawTaskPoints(task);
@@ -290,103 +264,98 @@ function buildCard(task, isCompleted) {
     return card;
 }
 
-function updateTabBadges() {
-    const completedBtn = document.querySelector('.task-tab[data-tab="completed"]');
-    if (completedBtn) {
-        completedBtn.textContent = completedTasks.size
-            ? `Completed (${completedTasks.size})`
-            : 'Completed';
-    }
-}
+// ── Task search overlay ───────────────────────────────────────────
+function renderSearchResults() {
+    const resultsEl = document.getElementById('task-search-results');
+    if (!resultsEl) return;
 
-function renderTasks() {
-    if (allTasks.length === 0) return;
+    const regionSet = currentRegions !== null ? new Set(currentRegions) : null;
+    const search = taskSearchQuery.toLowerCase();
 
-    renderStats();
-    updateTabBadges();
+    const plannedNames = window._getPlannerTaskNames ? window._getPlannerTaskNames() : null;
+
+    const matches = allTasks.filter(task => {
+        if (!taskMatchesRegion(task, regionSet)) return false;
+        if (search && !task._searchText.includes(search)) return false;
+        if (plannedNames && plannedNames.has(task.name)) return false;
+        return true;
+    });
 
     const frag = document.createDocumentFragment();
-
-    if (activeTab === 'active') {
-        const visible = filterActiveTasks();
-        if (visible.length === 0) {
-            taskList.innerHTML = '<div class="task-panel-empty">No tasks match the current filters.</div>';
-            return;
-        }
-        for (const task of visible) frag.appendChild(buildCard(task, false));
+    if (matches.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'task-panel-empty';
+        empty.textContent = search ? 'No tasks match the search.' : 'No tasks for the current region filter.';
+        frag.appendChild(empty);
     } else {
-        const visible = filterCompletedTasks();
-
-        // Reset button always shown when there are any completions
-        if (completedTasks.size > 0) {
-            const resetBtn = document.createElement('button');
-            resetBtn.className = 'task-reset-btn';
-            resetBtn.textContent = `Reset all (${completedTasks.size})`;
-            resetBtn.addEventListener('click', () => {
-                if (confirm('Clear all completed tasks?')) {
-                    completedTasks.clear();
-                    saveCompleted();
-                    updateTabBadges();
-                    renderTasks();
-                }
-            });
-            frag.appendChild(resetBtn);
-        }
-
-        if (visible.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'task-panel-empty';
-            empty.textContent = 'No completed tasks yet.';
-            frag.appendChild(empty);
-        } else {
-            for (const task of visible) frag.appendChild(buildCard(task, true));
-        }
+        for (const task of matches) frag.appendChild(buildCard(task));
     }
-
-    taskList.innerHTML = '';
-    taskList.appendChild(frag);
+    resultsEl.innerHTML = '';
+    resultsEl.appendChild(frag);
 }
 
-// ── Tabs ──────────────────────────────────────────────────────────
-document.querySelectorAll('.task-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-        activeTab = btn.dataset.tab;
-        document.querySelectorAll('.task-tab').forEach(b => b.classList.remove('task-tab-active'));
-        btn.classList.add('task-tab-active');
-        renderTasks();
-    });
-});
+// Wire overlay open/close and internal search input
+(function wireSearchOverlay() {
+    const openBtn          = document.getElementById('task-search-open-btn');
+    const closeBtn         = document.getElementById('task-search-close-btn');
+    const overlay          = document.getElementById('task-search-overlay');
+    const searchInput      = document.getElementById('task-search-input');
+    const plannerContainer = document.getElementById('planner-container');
+    const statsEl          = document.getElementById('task-panel-stats');
 
-// ── Search & toggles ─────────────────────────────────────────────
-taskSearch.addEventListener('input', e => {
-    const nextSearch = e.target.value.trim();
-    if (taskSearchDebounce) clearTimeout(taskSearchDebounce);
-    taskSearchDebounce = setTimeout(() => {
-        currentSearch = nextSearch;
-        renderTasks();
-        taskSearchDebounce = null;
-    }, TASK_SEARCH_DEBOUNCE_MS);
-});
+    if (!openBtn || !overlay) return;
 
-document.getElementById('task-show-general').addEventListener('change', e => {
-    showGeneralTasks = e.target.checked;
-    if (taskSearchDebounce) {
-        clearTimeout(taskSearchDebounce);
-        taskSearchDebounce = null;
+    function openOverlay() {
+        overlay.style.display = '';
+        if (plannerContainer) plannerContainer.style.display = 'none';
+        if (statsEl) statsEl.style.display = 'none';
+        if (allTasks.length > 0) renderSearchResults();
+        requestAnimationFrame(() => { if (searchInput) searchInput.focus(); });
     }
-    renderTasks();
-});
 
-// ── Item spawns toggle ────────────────────────────────────────────
-(function () {
-    const btn = document.getElementById('task-spawns-toggle');
-    if (!btn) return;
+    function closeOverlay() {
+        overlay.style.display = 'none';
+        if (plannerContainer) plannerContainer.style.display = '';
+        if (statsEl) statsEl.style.display = '';
+        // Clear strategy pins/search when closing
+        clearTaskPoints();
+        selectedTaskName = null;
+        const ctrl = window._unifiedSearch;
+        if (ctrl && ctrl.triggerSearch) ctrl.triggerSearch('', false);
+    }
 
-    const L   = window.L;
-    let spawnsLayer = null;   // L.layerGroup, created on first show
-    let allSpawnsData = null; // cached JSON
-    let allNamesData = null;  // cached names map (id -> name)
-    let nameToId = null;      // cached reverse names map (name -> lowest numeric id)
+    openBtn.addEventListener('click', openOverlay);
+    if (closeBtn) closeBtn.addEventListener('click', closeOverlay);
+
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            if (taskSearchDebounce) clearTimeout(taskSearchDebounce);
+            taskSearchDebounce = setTimeout(() => {
+                taskSearchQuery = searchInput.value.trim();
+                renderSearchResults();
+                taskSearchDebounce = null;
+            }, TASK_SEARCH_DEBOUNCE_MS);
+        });
+    }
+
+    const generalToggle = document.getElementById('task-show-general');
+    if (generalToggle) {
+        generalToggle.checked = true;
+        generalToggle.addEventListener('change', e => {
+            showGeneralTasks = e.target.checked;
+            if (taskSearchDebounce) { clearTimeout(taskSearchDebounce); taskSearchDebounce = null; }
+            renderSearchResults();
+        });
+    }
+})();
+
+// ── Item spawns toggle (Leaflet control — alongside shops/thieving buttons) ──
+(function mountSpawnsControl() {
+    const L = window.L;
+    let spawnsLayer = null;
+    let allSpawnsData = null;
+    let allNamesData = null;
+    let nameToId = null;
     let spawnsVisible = false;
 
     async function loadSpawnsData() {
@@ -428,7 +397,6 @@ document.getElementById('task-show-general').addEventListener('change', e => {
 
     function buildSpawnOffsetLookup(items) {
         const tileTypes = new Map();
-
         items.forEach(item => {
             const itemKey = item.page_name.toLowerCase();
             item.coordinates.forEach(coord => {
@@ -438,7 +406,6 @@ document.getElementById('task-show-general').addEventListener('change', e => {
                 if (!types.includes(itemKey)) types.push(itemKey);
             });
         });
-
         const offsetLookup = new Map();
         tileTypes.forEach((types, tileKey) => {
             if (types.length <= 1) return;
@@ -447,7 +414,6 @@ document.getElementById('task-show-general').addEventListener('change', e => {
                 offsetLookup.set(`${tileKey}|${itemKey}`, offsets[index] || [0, 0]);
             });
         });
-
         return offsetLookup;
     }
 
@@ -470,7 +436,6 @@ document.getElementById('task-show-general').addEventListener('change', e => {
         const spawnOffsetLookup = buildSpawnOffsetLookup(visibleSpawns);
 
         visibleSpawns.forEach(item => {
-
             const regionLabel = item.leagueregion
                 .map(r => r.charAt(0).toUpperCase() + r.slice(1)).join(', ');
 
@@ -508,42 +473,70 @@ document.getElementById('task-show-general').addEventListener('change', e => {
         });
     }
 
-    btn.addEventListener('click', async () => {
-        const map = window.runescape_map;
-        if (!map) return;
+    function wireSpawnsButton(btn) {
+        btn.addEventListener('click', async () => {
+            const map = window.runescape_map;
+            if (!map) return;
 
-        if (spawnsVisible) {
-            if (spawnsLayer && map.hasLayer(spawnsLayer)) map.removeLayer(spawnsLayer);
-            spawnsVisible = false;
-            btn.classList.remove('task-spawns-btn-active');
-            btn.textContent = 'Show Item Spawns';
-        } else {
-            btn.textContent = 'Loading…';
-            btn.disabled = true;
-            await loadSpawnsData();
-            btn.disabled = false;
-            buildSpawnsLayer(currentRegions || []);
-            if (spawnsLayer) spawnsLayer.addTo(map);
-            spawnsVisible = true;
-            btn.classList.add('task-spawns-btn-active');
-            btn.textContent = 'Hide Item Spawns';
+            if (spawnsVisible) {
+                if (spawnsLayer && map.hasLayer(spawnsLayer)) map.removeLayer(spawnsLayer);
+                spawnsVisible = false;
+                btn.classList.remove('task-spawns-btn-active');
+                btn.textContent = 'Show Item Spawns';
+            } else {
+                btn.textContent = 'Loading…';
+                btn.disabled = true;
+                await loadSpawnsData();
+                btn.disabled = false;
+                buildSpawnsLayer(currentRegions || []);
+                if (spawnsLayer) spawnsLayer.addTo(map);
+                spawnsVisible = true;
+                btn.classList.add('task-spawns-btn-active');
+                btn.textContent = 'Hide Item Spawns';
+            }
+        });
+
+        function onSpawnsRegionChange(regions) {
+            if (!spawnsVisible) return;
+            const map = window.runescape_map;
+            buildSpawnsLayer(regions);
+            if (spawnsLayer && map) spawnsLayer.addTo(map);
         }
-    });
 
-    // Keep spawns in sync with region changes while visible
-    function onSpawnsRegionChange(regions) {
-        if (!spawnsVisible) return;
-        const map = window.runescape_map;
-        buildSpawnsLayer(regions);
-        if (spawnsLayer && map) spawnsLayer.addTo(map);
+        if (window._regionControl) {
+            window._regionControl.onRegionChange(onSpawnsRegionChange);
+        } else {
+            window.addEventListener('regionControlReady', e => {
+                e.detail.onRegionChange(onSpawnsRegionChange);
+            }, { once: true });
+        }
     }
 
-    if (window._regionControl) {
-        window._regionControl.onRegionChange(onSpawnsRegionChange);
+    function addSpawnsControl() {
+        if (!L || !window.runescape_map) return;
+        const SpawnsControl = L.Control.extend({
+            onAdd: function () {
+                const container = L.DomUtil.create('div', 'leaflet-control-spawns');
+                const btn = L.DomUtil.create('button', 'task-spawns-btn leaflet-control-spawns-btn', container);
+                btn.textContent = 'Show Item Spawns';
+                L.DomEvent.disableClickPropagation(container);
+                wireSpawnsButton(btn);
+                return container;
+            }
+        });
+        new SpawnsControl({ position: 'bottomleft' }).addTo(window.runescape_map);
+    }
+
+    if (window.runescape_map) {
+        addSpawnsControl();
     } else {
-        window.addEventListener('regionControlReady', e => {
-            e.detail.onRegionChange(onSpawnsRegionChange);
-        }, { once: true });
+        let attempts = 0;
+        const poll = setInterval(() => {
+            if (window.runescape_map || ++attempts > 40) {
+                clearInterval(poll);
+                if (window.runescape_map) addSpawnsControl();
+            }
+        }, 200);
     }
 })();
 
@@ -553,7 +546,12 @@ function wireRegionControl(regionControl) {
     window._getCurrentRegions = () => currentRegions;
     regionControl.onRegionChange(regions => {
         currentRegions = regions;
-        renderTasks();
+        renderStats();
+        // Re-render search results if overlay is currently open
+        const overlay = document.getElementById('task-search-overlay');
+        if (overlay && overlay.style.display !== 'none') {
+            renderSearchResults();
+        }
     });
 }
 
@@ -562,7 +560,6 @@ if (window._regionControl) {
 } else {
     window.addEventListener('regionControlReady', e => {
         wireRegionControl(e.detail);
-        renderTasks();
     }, { once: true });
 }
 
@@ -571,15 +568,16 @@ async function init() {
     try {
         allTasks = (await fetchJsonCached(TASKS_URL)).map(normalizeTask);
     } catch (err) {
-        taskList.innerHTML = '<div class="task-panel-empty">Failed to load tasks.</div>';
+        const resultsEl = document.getElementById('task-search-results');
+        if (resultsEl) resultsEl.innerHTML = '<div class="task-panel-empty">Failed to load tasks.</div>';
         console.error('LeagueTasks: failed to fetch tasks JSON', err);
         return;
     }
-    updateTabBadges();
-    renderTasks();
+    renderStats();
     // Expose tasks globally for the planner plugin
     window._allTasksRef = allTasks;
 }
 
 init();
+
 

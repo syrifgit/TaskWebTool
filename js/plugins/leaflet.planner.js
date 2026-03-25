@@ -1009,7 +1009,7 @@ function renderPlanner() {
     if (flatItems.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'task-panel-empty';
-        empty.innerHTML = 'No tasks planned yet.<br><small style="color:#5a4a20;">Use the search below or drag tasks from the Active tab.</small>';
+        empty.innerHTML = 'No tasks planned yet.<br><small style="color:#5a4a20;">Use the Task Search panel to find and add tasks.</small>';
         container.appendChild(empty);
     }
 
@@ -1280,8 +1280,10 @@ function buildPlannerCard(item, task, pts, runPts, orderNum) {
     const tier  = isVirtual ? { name: 'Custom step', color: VIRTUAL_COLOR } : tierFor(pts);
     const color = tier.color;
 
+    const isCompleted = !isVirtual && window._completedTasks && window._completedTasks.has(item.taskName);
+
     const card = document.createElement('div');
-    card.className = 'planner-card' + (isVirtual ? ' planner-card-virtual' : '');
+    card.className = 'planner-card' + (isVirtual ? ' planner-card-virtual' : '') + (isCompleted ? ' planner-card-done' : '');
     if (plannerSelectedId === item.id) card.classList.add('planner-card-selected');
     card.dataset.id   = item.id;
     card.draggable    = true;
@@ -1306,6 +1308,12 @@ function buildPlannerCard(item, task, pts, runPts, orderNum) {
         : `<span class="planner-card-name">${esc(task ? task.name : item.taskName)}</span>` +
           `<span class="planner-card-pts" style="color:${color}">${pts} pts</span>`;
 
+    const completedCheckHtml = !isVirtual
+        ? `<label class="planner-card-done-label" title="Mark as completed" onclick="event.stopPropagation();">` +
+          `<input type="checkbox" class="planner-card-done-checkbox" data-taskname="${esc(item.taskName)}" ${isCompleted ? 'checked' : ''}/>` +
+          `</label>`
+        : '';
+
     card.innerHTML =
         `<div class="planner-card-header">` +
             `<span class="planner-drag-handle" title="Drag to reorder">⠿</span>` +
@@ -1313,6 +1321,7 @@ function buildPlannerCard(item, task, pts, runPts, orderNum) {
             `<span class="planner-tier-dot" style="background:${color}" title="${tier.name}${isVirtual ? '' : ` (${pts} pts)`}"></span>` +
             headerMiddle +
             `<span class="planner-running-pts" title="Running total">${runPts} pts</span>` +
+            completedCheckHtml +
             `<button class="planner-remove-btn" data-id="${item.id}" title="Remove from planner">✕</button>` +
         `</div>` +
         (isVirtual
@@ -1386,6 +1395,26 @@ function buildPlannerCard(item, task, pts, runPts, orderNum) {
             c.classList.toggle('planner-card-selected', c.dataset.id === plannerSelectedId);
         });
     });
+
+    // ── Completion toggle ─────────────────────────────────────────
+    const doneCheckbox = card.querySelector('.planner-card-done-checkbox');
+    if (doneCheckbox) {
+        doneCheckbox.addEventListener('change', e => {
+            e.stopPropagation();
+            const name = e.target.dataset.taskname;
+            const nowDone = e.target.checked;
+            if (window._completedTasks) {
+                if (nowDone) window._completedTasks.add(name);
+                else window._completedTasks.delete(name);
+            }
+            if (window._saveCompleted) window._saveCompleted();
+            if (window._renderStats) window._renderStats();
+            // Update only this card in-place instead of rebuilding the whole planner
+            card.classList.toggle('planner-card-done', nowDone);
+            const nameEl = card.querySelector('.planner-card-name');
+            if (nameEl) nameEl.style.textDecoration = nowDone ? 'line-through' : '';
+        });
+    }
 
     // ── Remove ───────────────────────────────────────────────────
     card.querySelector('.planner-remove-btn').addEventListener('click', e => {
@@ -1620,23 +1649,12 @@ window._plannerAddTask = function(taskName) {
 };
 
 function activatePlannerTab() {
-    const plannerTab = document.querySelector('.task-tab[data-tab="planner"]');
-    if (plannerTab && !plannerTab.classList.contains('task-tab-active')) {
-        plannerTab.click();
-    } else {
-        renderPlanner();
-    }
+    renderPlanner();
 }
 
 function selectPlannerItem(itemId) {
     plannerSelectedId = itemId;
-    // Ensure the planner tab is visible, then scroll the card into view
-    const plannerTab = document.querySelector('.task-tab[data-tab="planner"]');
-    if (plannerTab && !plannerTab.classList.contains('task-tab-active')) {
-        plannerTab.click(); // renderPlanner() is called by the tab switch handler
-    } else {
-        renderPlanner();
-    }
+    renderPlanner();
     // Scroll after a brief yield so the DOM has been rebuilt
     setTimeout(() => {
         const card = document.querySelector(`.planner-card[data-id="${CSS.escape(itemId)}"]`);
@@ -1644,47 +1662,7 @@ function selectPlannerItem(itemId) {
     }, 50);
 }
 
-// ─── Tab integration ──────────────────────────────────────────────
-function setupTabSwitching() {
-    const plannerContainer = document.getElementById('planner-container');
-    const taskList         = document.getElementById('task-list');
-    const taskStats        = document.getElementById('task-panel-stats');
-    const taskSearch       = document.getElementById('task-search');
-    const taskGenToggle    = document.getElementById('task-general-toggle');
-    const taskSpawnsBtn    = document.getElementById('task-spawns-toggle');
-
-    if (!plannerContainer) return;
-
-    document.querySelectorAll('.task-tab').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const tab = btn.dataset.tab;
-
-            if (tab === 'planner') {
-                plannerContainer.style.display = '';
-                if (taskList)      taskList.style.display      = 'none';
-                if (taskStats)     taskStats.style.display     = 'none';
-                if (taskSearch)    taskSearch.style.display    = 'none';
-                if (taskGenToggle) taskGenToggle.style.display = 'none';
-                if (taskSpawnsBtn) taskSpawnsBtn.style.display = 'none';
-                renderPlanner();
-            } else {
-                plannerContainer.style.display = 'none';
-                if (taskList)      taskList.style.display      = '';
-                if (taskStats)     taskStats.style.display     = '';
-                if (taskSearch)    taskSearch.style.display    = '';
-                if (taskGenToggle) taskGenToggle.style.display = '';
-                if (taskSpawnsBtn) taskSpawnsBtn.style.display = '';
-                cancelPinning();
-                // Clear suggestion pins when leaving planner tab
-                plannerSelectedId = null;
-                if (plannerSuggLayer && plannerMap) {
-                    plannerMap.removeLayer(plannerSuggLayer);
-                    plannerSuggLayer = null;
-                }
-            }
-        });
-    });
-}
+// ─── Tab integration (removed — planner is always visible) ──────────────────
 
 // ─── Escape to cancel pinning / close context menu ────────────────
 document.addEventListener('keydown', e => {
@@ -1720,7 +1698,8 @@ document.addEventListener('keydown', e => {
         plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, [])];
         ensurePlannerGroups();
     }
-    setupTabSwitching();
+    window._renderPlanner = renderPlanner;
+    window._getPlannerTaskNames = () => new Set(allPlannerItems().filter(i => !i.virtual).map(i => i.taskName));
     // Re-draw now that plannerGroups are populated
     redrawMapOverlays();
     renderPlanner();
