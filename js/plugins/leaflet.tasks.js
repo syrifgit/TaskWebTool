@@ -12,6 +12,13 @@ import { fetchJsonCached } from "../data/json-cache.js";
 const TASKS_URL = 'https://raw.githubusercontent.com/syrifgit/full-task-scraper/refs/heads/main/generated/league-5-raging-echoes/LEAGUE_5.full.json';
 const TASK_STRATEGY_URL = 'data_osrs/strategy.json';
 const STORAGE_KEY = 'league_tasks_completed';
+
+// Maps region button names to area names used in the task dataset
+const TASK_AREA_MAP = {
+    'Desert': 'Kharidian Desert',
+    'Fremennik': 'Fremennik Province',
+    'Kourend': 'Kourend & Kebos',
+};
 const TASK_SEARCH_DEBOUNCE_MS = 100;
 
 const TIER_POINTS = {
@@ -202,8 +209,9 @@ function taskMatchesRegion(task, regionSet) {
     if (!task.area) {
         return showGeneralTasks;
     }
-
-    return !regionSet || regionSet.has(task.area);
+    if (!regionSet) return true;
+    const mappedSet = new Set([...regionSet].map(r => TASK_AREA_MAP[r] ?? r));
+    return mappedSet.has(task.area);
 }
 
 function clearTaskPoints() {
