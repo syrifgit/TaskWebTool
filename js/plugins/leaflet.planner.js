@@ -11,7 +11,7 @@ import { fetchJsonCached } from "../data/json-cache.js";
  *  - Coloured pins by task tier (Easy/Medium/Hard/Elite/Master)
  *  - Running cumulative points total next to each entry
  *  - Per-task comments / step notes
- *  - Polylines between pinned tasks (all | none)
+ *  - Polylines between pinned tasks (show | hide)
  *  - Drag-and-drop reordering within the planner list
  *  - Drag tasks from the active list drop zone into planner
  */
@@ -40,7 +40,7 @@ let plannerGroups = [];  // [{ id, name, collapsed, showPins, items:[{ id, taskN
 let allTasksRef  = [];   // mirror of allTasks from leaflet.tasks.js
 let allTasksByName = new Map();
 let plannerMap   = null;
-let plannerLineMode    = 'all';      // 'all' | 'none'
+let plannerLinesVisible = true;
 let plannerPinsVisible = true;
 let plannerSelectedId  = null;       // highlighted item id
 let pinningMode        = false;
@@ -510,8 +510,7 @@ function redrawMapOverlays() {
 
     if (pinned.length === 0) return;
 
-    let visiblePinned = pinned.filter(x => x.group.showPins);
-    if (plannerLineMode === 'none') visiblePinned = [];
+    const visiblePinned = pinned.filter(x => x.group.showPins);
 
     if (plannerPinsVisible && visiblePinned.length > 0) {
         plannerPinsLayer = L.layerGroup();
@@ -567,13 +566,11 @@ function redrawMapOverlays() {
     } // end plannerPinsVisible
 
     // Lines
-    if (plannerLineMode !== 'none' && visiblePinned.length >= 2) {
+    if (plannerLinesVisible && visiblePinned.length >= 2) {
         plannerLinesLayer = L.layerGroup();
 
-        let pairs = [];
-        if (plannerLineMode === 'all') {
-            for (let i = 0; i < visiblePinned.length - 1; i++) pairs.push([visiblePinned[i], visiblePinned[i + 1]]);
-        }
+        const pairs = [];
+        for (let i = 0; i < visiblePinned.length - 1; i++) pairs.push([visiblePinned[i], visiblePinned[i + 1]]);
 
         pairs.forEach(([a, b]) => {
             L.polyline(
@@ -851,10 +848,7 @@ function renderPlanner() {
             `<select id="planner-route-select" class="planner-route-select">${userRoutesOpts}${presetOpts}</select>` +
         `</div>` +
         `<div class="planner-controls-row">` +
-            `<span class="planner-ctrl-label">Lines:</span>` +
-            ['all','none'].map(m =>
-                `<button class="planner-line-btn${plannerLineMode === m ? ' planner-line-btn-active' : ''}" data-mode="${m}">${m}</button>`
-            ).join('') +
+            `<button class="planner-line-btn${plannerLinesVisible ? ' planner-line-btn-active' : ''}" id="planner-lines-toggle">Lines</button>` +
             `<span class="planner-ctrl-sep"></span>` +
             `<button class="planner-line-btn${plannerPinsVisible ? ' planner-line-btn-active' : ''}" id="planner-pins-toggle">Pins</button>` +
             `<span class="planner-ctrl-sep"></span>` +
@@ -867,13 +861,14 @@ function renderPlanner() {
             `<button class="planner-line-btn" id="planner-new-route-btn" title="Create a new empty route">+ New Route</button>` +
             `<button class="planner-line-btn" id="planner-clear-btn" title="Clear all tasks from the current route">✕ Clear</button>` +
         `</div>`;
-    ctrl.querySelectorAll && ctrl.querySelectorAll('.planner-line-btn[data-mode]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            plannerLineMode = btn.dataset.mode;
+    const linesToggle = ctrl.querySelector('#planner-lines-toggle');
+    if (linesToggle) {
+        linesToggle.addEventListener('click', () => {
+            plannerLinesVisible = !plannerLinesVisible;
             redrawMapOverlays();
             renderPlanner();
         });
-    });
+    }
     // Route selector
     const routeSelect = ctrl.querySelector('#planner-route-select');
     if (routeSelect) {

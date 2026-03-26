@@ -172,23 +172,17 @@ test.describe('P2 comprehensive feature coverage', () => {
     await expect(page.locator('.planner-card').first().locator('.planner-pin-btn')).toHaveText('📍 Set pin');
   });
 
-  test.skip('planner line mode and pins visibility controls update state', async ({ page }) => {
+  test.skip('planner lines and pins visibility controls update state independently', async ({ page }) => {
     await gotoApp(page);
     await seedPlannerWithFirstTasks(page, 2);
     await openPlannerTab(page);
 
-    const noneBtn = page.locator('.planner-line-btn[data-mode="none"]');
-    const nearbyBtn = page.locator('.planner-line-btn[data-mode="nearby"]');
-    const allBtn = page.locator('.planner-line-btn[data-mode="all"]');
-
-    await noneBtn.click();
-    await expect(noneBtn).toHaveClass(/planner-line-btn-active/);
-
-    await nearbyBtn.click();
-    await expect(nearbyBtn).toHaveClass(/planner-line-btn-active/);
-
-    await allBtn.click();
-    await expect(allBtn).toHaveClass(/planner-line-btn-active/);
+    const linesBtn = page.locator('#planner-lines-toggle');
+    await expect(linesBtn).toHaveClass(/planner-line-btn-active/);
+    await linesBtn.click();
+    await expect(linesBtn).not.toHaveClass(/planner-line-btn-active/);
+    await linesBtn.click();
+    await expect(linesBtn).toHaveClass(/planner-line-btn-active/);
 
     const pinsBtn = page.locator('#planner-pins-toggle');
     await expect(pinsBtn).toHaveClass(/planner-line-btn-active/);
