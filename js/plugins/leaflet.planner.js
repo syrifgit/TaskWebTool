@@ -39,6 +39,7 @@ const VIRTUAL_COLOR = '#00cccc'; // teal – visually distinct from all tier col
 let plannerGroups = [];  // [{ id, name, collapsed, showPins, items:[{ id, taskName, ... }] }]
 let allTasksRef  = [];   // mirror of allTasks from leaflet.tasks.js
 let allTasksByName = new Map();
+let allTasksById   = new Map();
 let plannerMap   = null;
 let plannerLinesVisible = true;
 let plannerPinsVisible = true;
@@ -60,9 +61,15 @@ let activeRouteName    = null;   // null = showing user route; string = read-onl
 let _presetManifest    = null;   // cached [{name,file}] from route_jsons/manifest.json
 
 function normalizePlannerItem(raw) {
+    let taskName = raw && raw.taskName ? raw.taskName : null;
+    if (!taskName && raw && raw.taskId != null) {
+        const task = allTasksById.get(raw.taskId);
+        if (task) taskName = task.name;
+    }
     return {
         ...raw,
         id: raw && raw.id ? raw.id : genId(),
+        taskName: taskName,
         comments: Array.isArray(raw && raw.comments) ? raw.comments : [],
     };
 }
@@ -1758,6 +1765,7 @@ function initPlanner(map) {
         if (window._allTasksRef && window._allTasksRef.length > 0) {
             allTasksRef = window._allTasksRef;
             allTasksByName = new Map(allTasksRef.map(task => [task.name, task]));
+            allTasksById = new Map(allTasksRef.filter(t => t.taskId != null).map(task => [task.taskId, task]));
             // Always redraw map overlays so saved pins appear immediately on load
             redrawMapOverlays();
             // Also render the UI if the planner tab is already active
