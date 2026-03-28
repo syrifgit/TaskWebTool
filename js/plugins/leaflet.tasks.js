@@ -193,12 +193,12 @@ function normalizeTask(rawTask, strategyMap) {
 
 function getTaskPointIcon() {
     if (!taskPointIcon && window.L) {
-        taskPointIcon = window.L.icon({
-            iconUrl: 'images/marker-icon.png',
-            iconSize: [25, 41],
-            iconAnchor: [12, 41],
-            popupAnchor: [1, -34],
-            shadowSize: [41, 41]
+        taskPointIcon = window.L.divIcon({
+            className: 'task-strategy-pin',
+            html: '',
+            iconSize: [18, 18],
+            iconAnchor: [9, 9],
+            popupAnchor: [0, -12],
         });
     }
 
@@ -455,11 +455,7 @@ function renderSearchResults() {
         overlay.style.display = 'none';
         if (plannerContainer) plannerContainer.style.display = '';
         if (statsEl) statsEl.style.display = '';
-        // Clear strategy pins/search when closing
-        clearTaskPoints();
-        selectedTaskName = null;
-        const ctrl = window._unifiedSearch;
-        if (ctrl && ctrl.triggerSearch) ctrl.triggerSearch('', false);
+        // Strategy pins and search stay active on the map so the user can see them after closing
     }
 
     openBtn.addEventListener('click', openOverlay);
