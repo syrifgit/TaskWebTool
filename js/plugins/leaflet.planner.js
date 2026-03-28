@@ -524,7 +524,7 @@ function redrawMapOverlays() {
 
         visiblePinned.forEach(({ item, idx, task }) => {
             const isVirtual = !!item.virtual;
-            const pts   = isVirtual ? 0 : (task ? (task.points || 10) : 10);
+            const pts   = isVirtual ? (item.customPoints || 0) : (task ? (task.points || 10) : 10);
             const tier  = isVirtual ? { name: 'Custom step', color: VIRTUAL_COLOR } : tierFor(pts);
             const displayName = isVirtual ? (item.customName || 'Unnamed step') : (task ? task.name : item.taskName);
             const displayDesc = isVirtual ? (item.customDesc || '') : (task ? task.task : '');
@@ -830,7 +830,7 @@ function renderPlanner() {
     ctrl.className = 'planner-controls';
     const pinnedCount = flatItems.filter(i => i.pinCoords).length;
     let runningTotal = flatItems.reduce((s, i) => {
-        if (i.virtual) return s;
+        if (i.virtual) return s + (i.customPoints || 0);
         const t = getTask(i.taskName);
         return s + (t ? (t.points || 10) : 10);
     }, 0);
@@ -1057,7 +1057,7 @@ function renderPlanner() {
     let runPts = 0;
     flatItems.forEach((item, idx) => {
         const task = item.virtual ? null : getTask(item.taskName);
-        const pts  = item.virtual ? 0 : (task ? (task.points || 10) : 10);
+        const pts  = item.virtual ? (item.customPoints || 0) : (task ? (task.points || 10) : 10);
         runPts += pts;
         orderById.set(item.id, idx + 1);
         runPtsById.set(item.id, runPts);
@@ -1090,7 +1090,7 @@ function buildPlannerGroup(group, orderById, runPtsById) {
 
     const pinnedCount = group.items.filter(i => i.pinCoords).length;
     const groupPts = group.items.reduce((s, i) => {
-        if (i.virtual) return s;
+        if (i.virtual) return s + (i.customPoints || 0);
         const t = getTask(i.taskName);
         return s + (t ? (t.points || 10) : 10);
     }, 0);
@@ -1230,7 +1230,7 @@ function buildPlannerGroup(group, orderById, runPtsById) {
 
     group.items.forEach((item, idxInGroup) => {
         const task = item.virtual ? null : getTask(item.taskName);
-        const pts  = item.virtual ? 0 : (task ? (task.points || 10) : 10);
+        const pts  = item.virtual ? (item.customPoints || 0) : (task ? (task.points || 10) : 10);
         const orderNum = orderById.get(item.id) || 0;
         const runPts = runPtsById.get(item.id) || 0;
         body.appendChild(buildPlannerCard(item, task, pts, runPts, orderNum));
@@ -1343,7 +1343,8 @@ function buildPlannerCard(item, task, pts, runPts, orderNum) {
 
     const headerMiddle = isVirtual
         ? `<span class="planner-virtual-badge">custom</span>` +
-          `<input class="planner-virtual-name" value="${esc(item.customName || '')}" placeholder="Step name..." data-id="${item.id}"/>`
+          `<input class="planner-virtual-name" value="${esc(item.customName || '')}" placeholder="Step name..." data-id="${item.id}"/>` +
+          `<span class="planner-virtual-pts" data-id="${item.id}" title="Click to set points" style="color:${color}">${pts} pts</span>`
         : `<span class="planner-card-name">${esc(task ? task.name : item.taskName)}</span>` +
           `<span class="planner-card-pts" style="color:${color}">${pts} pts</span>`;
 
@@ -1357,7 +1358,7 @@ function buildPlannerCard(item, task, pts, runPts, orderNum) {
         `<div class="planner-card-header">` +
             `<span class="planner-drag-handle" title="Drag to reorder">⠿</span>` +
             `<span class="planner-order-num">${orderNum}</span>` +
-            `<span class="planner-tier-dot" style="background:${color}" title="${tier.name}${isVirtual ? '' : ` (${pts} pts)`}"></span>` +
+            `<span class="planner-tier-dot" style="background:${color}" title="${tier.name} (${pts} pts)"></span>` +
             headerMiddle +
             `<span class="planner-running-pts" title="Running total">${runPts} pts</span>` +
             completedCheckHtml +
@@ -1412,6 +1413,39 @@ function buildPlannerCard(item, task, pts, runPts, orderNum) {
         descInput.addEventListener('blur', saveVirtual);
         descInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); descInput.blur(); } });
         descInput.addEventListener('click', e => e.stopPropagation());
+
+        // Points badge — click to edit
+        const ptsSpan = card.querySelector('.planner-virtual-pts');
+        if (ptsSpan) {
+            ptsSpan.addEventListener('click', e => {
+                e.stopPropagation();
+                const currentVal = findItemContext(itemId)?.item?.customPoints || 0;
+                const ptsInput = document.createElement('input');
+                ptsInput.type = 'number';
+                ptsInput.className = 'planner-virtual-pts-input';
+                ptsInput.value = currentVal;
+                ptsInput.min = '0';
+                ptsInput.step = '1';
+                ptsSpan.replaceWith(ptsInput);
+                ptsInput.focus();
+                ptsInput.select();
+                const commitPts = () => {
+                    const newPts = Math.max(0, parseInt(ptsInput.value, 10) || 0);
+                    const ctx = findItemContext(itemId);
+                    if (ctx) {
+                        ctx.item.customPoints = newPts;
+                        savePlanner();
+                    }
+                    renderPlanner();
+                };
+                ptsInput.addEventListener('blur', commitPts);
+                ptsInput.addEventListener('keydown', e2 => {
+                    if (e2.key === 'Enter') { e2.preventDefault(); ptsInput.blur(); }
+                    if (e2.key === 'Escape') { renderPlanner(); }
+                });
+                ptsInput.addEventListener('click', e2 => e2.stopPropagation());
+            });
+        }
     }
 
     // ── Drag (internal reorder) ──────────────────────────────────

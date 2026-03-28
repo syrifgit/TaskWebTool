@@ -1401,6 +1401,44 @@ img.huechange { filter: hue-rotate(120deg); }
     white-space: nowrap;
 }
 
+/* Editable points badge on virtual card */
+.planner-virtual-pts {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: bold;
+    white-space: nowrap;
+    cursor: pointer;
+    border-bottom: 1px dashed #005555;
+    padding: 0 2px;
+    transition: opacity 0.1s;
+}
+.planner-virtual-pts:hover {
+    opacity: 0.75;
+}
+
+/* Inline number input that replaces the pts badge when editing */
+.planner-virtual-pts-input {
+    flex: 0 0 auto;
+    width: 52px;
+    background: #001a1a;
+    border: 1px solid #00cccc;
+    border-radius: 3px;
+    color: #00cccc;
+    font-size: 11px;
+    font-weight: bold;
+    text-align: center;
+    padding: 1px 3px;
+    outline: none;
+    -webkit-appearance: textfield;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.planner-virtual-pts-input::-webkit-outer-spin-button,
+.planner-virtual-pts-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
 /* Inline editable name on virtual card */
 .planner-virtual-name {
     flex: 1 1 auto;
