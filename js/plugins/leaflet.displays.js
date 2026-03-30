@@ -43,13 +43,23 @@ export default void function (factory) {
         },
 
         getData: async function (name) {
-            let [data, names] = await Promise.all([
+            let [data, names, nameMapping] = await Promise.all([
                 fetchJsonCached(`${this.options.folder}/item_spawns.json`),
-                fetchJsonCached(`${this.options.folder}/names.json`, { fallback: null })
+                fetchJsonCached(`${this.options.folder}/names.json`, { fallback: null }),
+                fetchJsonCached(`${this.options.folder}/item_name_mapping.json`, { fallback: null })
             ]);
 
             if (names) {
                 this._names = names;
+            }
+            if (nameMapping) {
+                this._nameMapping = {};
+                for (const id in nameMapping) {
+                    const key = nameMapping[id].toLowerCase();
+                    if (!(key in this._nameMapping) || +id < +this._nameMapping[key]) {
+                        this._nameMapping[key] = id;
+                    }
+                }
             }
 
             let hasRegionFilter = Array.isArray(this.options.regions);
@@ -77,24 +87,25 @@ export default void function (factory) {
         createMarkers: function (data) {
             data.forEach(item => {
                 if (item.coordinates && item.coordinates.length > 0) {
-                    // Reverse-lookup item ID from names mapping for icon display
-                    // Pick the lowest numeric ID when multiple IDs share the same name
                     let itemId = null;
+                    const nameLower = item.page_name.toLowerCase();
                     if (this._names) {
-                        let nameLower = item.page_name.toLowerCase();
                         for (let id in this._names) {
                             if (this._names[id].toLowerCase() === nameLower) {
                                 if (itemId === null || +id < +itemId) itemId = id;
                             }
                         }
                     }
+                    if (itemId === null && this._nameMapping) {
+                        itemId = this._nameMapping[nameLower] ?? null;
+                    }
 
-                    const fallbackHtml = `<div class='item-spawn-icon-fallback'></div>`;
-                    let iconHtml = itemId !== null
-                        ? `<img src="https://raw.githubusercontent.com/runelite/static.runelite.net/refs/heads/gh-pages/cache/item/icon/${itemId}.png" alt="${item.page_name}" class="item-spawn-icon-img" onerror="this.outerHTML='${fallbackHtml}'">`
+                    const fallbackHtml = `<div class="item-spawn-icon-fallback"></div>`;
+                    const escapedFb = fallbackHtml.replace(/"/g, '&quot;');
+                    const iconHtml = itemId !== null
+                        ? `<img src="https://raw.githubusercontent.com/runelite/static.runelite.net/refs/heads/gh-pages/cache/item/icon/${itemId}.png" alt="${item.page_name.replace(/"/g, '&quot;')}" class="item-spawn-icon-img" onerror="this.outerHTML='${escapedFb}'">`
                         : fallbackHtml;
-
-                    let divIcon = L.divIcon({
+                    const divIcon = L.divIcon({
                         html: iconHtml,
                         className: 'item-spawn-icon',
                         iconSize: [28, 29],
