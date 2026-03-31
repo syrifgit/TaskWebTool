@@ -74,6 +74,10 @@ void function (global) {
         minNativeZoom: 2,
         maxNativeZoom: 5,
         noWrap: true,
+        attribution:
+            'Game data &copy; <a href="https://oldschool.runescape.wiki" target="_blank" rel="noopener">OSRS Wiki</a>' +
+            ' (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC-BY-SA 3.0</a>)' +
+            ' | Tiles by <a href="https://github.com/Explv/osrs_map_tiles" target="_blank" rel="noopener">Explv</a>',
     });
     explvLayer.getTileUrl = function (coords) {
         const plane = (runescape_map && runescape_map._plane) || 0;

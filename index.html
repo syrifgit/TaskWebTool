@@ -19,12 +19,63 @@
 	<script type="module" src="js/main/main_osrs.js"></script>
 	<script type="module" src="js/plugins/leaflet.tasks.js"></script>
 	<script type="module" src="js/plugins/leaflet.planner.js"></script>
-	
+	<script>
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape') {
+				var m = document.getElementById('credits-modal');
+				if (m) m.style.display = 'none';
+			}
+		});
+	</script>
 	</head>
   <body>
     <div id="app-wrapper">
       <a id="bug-report-btn" href="https://discord.com/channels/636001942279159830/1481097091110404250" target="_blank" rel="noopener" title="Report a bug on Discord">🐛 Report Bug · @i_have_groot</a>
+      <button id="credits-btn" title="Data sources and licenses" onclick="document.getElementById('credits-modal').style.display='flex'">📋 Credits &amp; Licenses</button>
       <div id="map"></div>
+
+      <!-- Credits modal -->
+      <div id="credits-modal" role="dialog" aria-modal="true" aria-labelledby="credits-modal-title" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+        <div id="credits-modal-box">
+          <div id="credits-modal-header">
+            <span id="credits-modal-title">Credits &amp; Licenses</span>
+            <button id="credits-modal-close" title="Close" onclick="document.getElementById('credits-modal').style.display='none'">✕</button>
+          </div>
+          <div id="credits-modal-body">
+            <h3>OSRS Wiki — CC-BY-SA 3.0</h3>
+            <p>Task names, descriptions, wiki notes, skill data, item names, and related game content are derived from the
+            <a href="https://oldschool.runescape.wiki" target="_blank" rel="noopener">Old School RuneScape Wiki</a>,
+            licensed under <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC-BY-SA 3.0</a>.
+            Content has been extracted, transformed, and supplemented with custom planner metadata.
+            In accordance with the ShareAlike terms, the derived data portions of this project are available under the same license.</p>
+
+            <h3>Task data — syrifgit/full-task-scraper</h3>
+            <p>Structured league task JSON is sourced from
+            <a href="https://github.com/syrifgit/full-task-scraper" target="_blank" rel="noopener">syrifgit/full-task-scraper</a>,
+            itself derived from the OSRS Wiki. CC-BY-SA 3.0 terms apply.</p>
+
+            <h3>Map tiles — Explv/osrs_map_tiles</h3>
+            <p>Map tiles are provided by
+            <a href="https://github.com/Explv/osrs_map_tiles" target="_blank" rel="noopener">Explv/osrs_map_tiles</a>.
+            The underlying map artwork is &copy; Jagex Ltd and is used under community fan-site tolerance.</p>
+
+            <h3>Map renderer — mejrs/rs-map-viewer</h3>
+            <p>The tile rendering approach is based on
+            <a href="https://github.com/mejrs/mejrs.github.io" target="_blank" rel="noopener">mejrs/mejrs.github.io</a>.
+            The underlying map artwork is &copy; Jagex Ltd.</p>
+
+            <h3>Item icons — RuneLite CDN</h3>
+            <p>Item icons are loaded from the RuneLite static asset CDN. &copy; Jagex Ltd.</p>
+
+            <h3>Leaflet.js</h3>
+            <p>Map rendering uses <a href="https://leafletjs.com/" target="_blank" rel="noopener">Leaflet</a>
+            &copy; Vladimir Agafonkin, under the BSD 2-Clause License.</p>
+
+            <hr>
+            <p><em>Old School RuneScape is a trademark of Jagex Ltd. This is an unofficial fan project, not affiliated with or endorsed by Jagex Ltd.</em></p>
+          </div>
+        </div>
+      </div>
       <div id="task-panel-resizer" title="Drag to resize task panel" aria-hidden="true"></div>
       <div id="task-panel">
         <div id="task-panel-header">

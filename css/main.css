@@ -51,7 +51,7 @@ html, body {
 #bug-report-btn {
     position: absolute;
     top: 8px;
-    left: 50%;
+    left: calc(50% - 90px);
     transform: translateX(-50%);
     z-index: 1000;
     padding: 5px 14px;
@@ -72,6 +72,120 @@ html, body {
     background-color: #3a0000;
     border-color: #cc0000;
     color: #ffd700;
+}
+
+#credits-btn {
+    position: absolute;
+    top: 8px;
+    left: calc(50% + 90px);
+    transform: translateX(-50%);
+    z-index: 1000;
+    padding: 5px 14px;
+    background-color: #1e1500;
+    color: #e8d5a0;
+    border: 2px solid #5a5a00;
+    border-radius: 4px;
+    font-family: "Helvetica Neue", Arial, Helvetica, sans-serif;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+    pointer-events: auto;
+}
+#credits-btn:hover {
+    background-color: #2a2800;
+    border-color: #aaaa00;
+    color: #ffd700;
+}
+
+/* ── Credits modal ──────────────────────────────────────────────── */
+#credits-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    background: rgba(0,0,0,0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+#credits-modal-box {
+    background: #1a1400;
+    border: 2px solid #8b7a20;
+    border-radius: 6px;
+    width: min(640px, 92vw);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+    font-family: "Helvetica Neue", Arial, Helvetica, sans-serif;
+    color: #e8d5a0;
+}
+#credits-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid #3a2800;
+    flex-shrink: 0;
+}
+#credits-modal-title {
+    font-size: 15px;
+    font-weight: bold;
+    color: #ffd700;
+}
+#credits-modal-close {
+    background: none;
+    border: 1px solid #5a4000;
+    color: #c8b880;
+    border-radius: 3px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1.4;
+    transition: background-color 0.12s, color 0.12s;
+}
+#credits-modal-close:hover {
+    background-color: #3a0000;
+    color: #ffd700;
+    border-color: #cc0000;
+}
+#credits-modal-body {
+    padding: 16px 20px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.6;
+}
+#credits-modal-body h3 {
+    margin: 14px 0 4px;
+    font-size: 13px;
+    color: #ffd700;
+    border-bottom: 1px solid #3a2800;
+    padding-bottom: 3px;
+}
+#credits-modal-body h3:first-child {
+    margin-top: 0;
+}
+#credits-modal-body p {
+    margin: 0 0 8px;
+    color: #c8b880;
+}
+#credits-modal-body a {
+    color: #88ccff;
+    text-underline-offset: 2px;
+}
+#credits-modal-body a:hover {
+    color: #ffd700;
+}
+#credits-modal-body hr {
+    border: none;
+    border-top: 1px solid #3a2800;
+    margin: 12px 0;
+}
+#credits-modal-body em {
+    color: #7a6a40;
+    font-style: italic;
 }
 
 /* ── Task Panel ─────────────────────────────────────────────────── */
