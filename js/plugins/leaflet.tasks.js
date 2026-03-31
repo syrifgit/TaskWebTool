@@ -598,15 +598,24 @@ function renderSearchResults() {
     async function loadSpawnsData() {
         if (allSpawnsData) return allSpawnsData;
         try {
-            [allSpawnsData, allNamesData] = await Promise.all([
+            const [spawnsData, namesData, nameMappingData] = await Promise.all([
                 fetchJsonCached('data_osrs/item_spawns.json'),
-                fetchJsonCached('data_osrs/names.json', { fallback: null })
+                fetchJsonCached('data_osrs/names.json', { fallback: null }),
+                fetchJsonCached('data_osrs/item_name_mapping.json', { fallback: null })
             ]);
+            allSpawnsData = spawnsData;
+            allNamesData = namesData;
             nameToId = {};
             if (allNamesData) {
                 for (const id in allNamesData) {
                     const key = allNamesData[id].toLowerCase();
                     if (!(key in nameToId) || +id < +nameToId[key]) nameToId[key] = id;
+                }
+            }
+            if (nameMappingData) {
+                for (const id in nameMappingData) {
+                    const key = nameMappingData[id].toLowerCase();
+                    if (!(key in nameToId)) nameToId[key] = id;
                 }
             }
         } catch (e) {
@@ -678,8 +687,9 @@ function renderSearchResults() {
 
             const itemKey = item.page_name.toLowerCase();
             const itemId = nameToId[itemKey] ?? null;
+            const escapedFb = fallbackHtml.replace(/"/g, '&quot;');
             const iconHtml = itemId !== null
-                ? `<img src="https://raw.githubusercontent.com/runelite/static.runelite.net/refs/heads/gh-pages/cache/item/icon/${itemId}.png" alt="${item.page_name}" class="item-spawn-icon-img" onerror="this.outerHTML='${fallbackHtml}'">`
+                ? `<img src="https://raw.githubusercontent.com/runelite/static.runelite.net/refs/heads/gh-pages/cache/item/icon/${itemId}.png" alt="${item.page_name.replace(/"/g, '&quot;')}" class="item-spawn-icon-img" onerror="this.outerHTML='${escapedFb}'">`
                 : fallbackHtml;
 
             const divIcon = L.divIcon({
