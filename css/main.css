@@ -17,6 +17,37 @@ html, body {
     background-color: black;
 }
 
+#task-panel-resizer {
+    flex: 0 0 8px;
+    width: 8px;
+    position: relative;
+    cursor: col-resize;
+    user-select: none;
+    touch-action: none;
+    border-left: 1px solid #3a2800;
+    border-right: 1px solid #3a2800;
+    background: linear-gradient(180deg, #171100 0%, #120d00 100%);
+    z-index: 510;
+}
+
+#task-panel-resizer::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2px;
+    height: 56px;
+    transform: translate(-50%, -50%);
+    border-radius: 2px;
+    background: linear-gradient(180deg, #5a3f00 0%, #8a6a00 50%, #5a3f00 100%);
+    opacity: 0.85;
+}
+
+#task-panel-resizer:hover,
+#task-panel-resizer.is-dragging {
+    background: linear-gradient(180deg, #261d00 0%, #1d1600 100%);
+}
+
 #bug-report-btn {
     position: absolute;
     top: 8px;
@@ -45,13 +76,13 @@ html, body {
 
 /* ── Task Panel ─────────────────────────────────────────────────── */
 #task-panel {
-    flex: 0 0 380px;
-    width: 380px;
+    flex: 0 0 480px;
+    width: 480px;
     height: 100%;
     display: flex;
     flex-direction: column;
     background-color: #1a1a1a;
-    border-left: 2px solid #4a3000;
+    border-left: 0;
     color: #e8d5a0;
     font-family: "Helvetica Neue", Arial, Helvetica, sans-serif;
     overflow: hidden;
@@ -899,18 +930,21 @@ img.huechange { filter: hue-rotate(120deg); }
 .planner-group-toggle:hover { border-color: #ffd700; color: #ffd700; }
 .planner-group-toggle-text {
     flex: 0 0 auto;
-    font-size: 11px;
+    font-size: 13px;
     background-color: #1a1200;
     border: 1px solid #3a2a00;
     border-radius: 3px;
     color: #8a7040;
-    padding: 2px 7px;
+    min-width: 26px;
+    padding: 2px 5px;
+    line-height: 1;
+    text-align: center;
     cursor: pointer;
 }
 .planner-group-toggle-text:hover { border-color: #ffd700; color: #ffd700; }
 .planner-group-name {
-    flex: 0 1 220px;
-    min-width: 120px;
+    flex: 1 1 140px;
+    min-width: 60px;
     background-color: #111;
     border: 1px solid #3a2800;
     border-radius: 3px;

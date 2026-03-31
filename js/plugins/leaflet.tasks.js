@@ -12,6 +12,9 @@ import { fetchJsonCached } from "../data/json-cache.js";
 const TASKS_URL = 'https://raw.githubusercontent.com/syrifgit/full-task-scraper/refs/heads/main/generated/league-5-raging-echoes/LEAGUE_5.full.json';
 const TASK_STRATEGY_URL = 'data_osrs/strategy.json';
 const STORAGE_KEY = 'league_tasks_completed';
+const TASK_PANEL_WIDTH_KEY = 'league_task_panel_width';
+const TASK_PANEL_MIN_WIDTH = 280;
+const TASK_PANEL_DEFAULT_WIDTH = 480;
 
 // Maps region button names to area names used in the task dataset
 const TASK_AREA_MAP = {
@@ -245,6 +248,106 @@ function drawTaskPoints(task) {
 
 // ── DOM references ────────────────────────────────────────────────
 const taskStats = document.getElementById('task-panel-stats');
+
+// ── Resizable task panel ─────────────────────────────────────────
+function wireTaskPanelResize() {
+    const panel = document.getElementById('task-panel');
+    const resizer = document.getElementById('task-panel-resizer');
+    if (!panel || !resizer) return;
+
+    let resizeRaf = null;
+    let dragState = null;
+
+    function invalidateMapSize() {
+        const map = window.runescape_map;
+        if (!map || typeof map.invalidateSize !== 'function') return;
+        if (resizeRaf !== null) return;
+        resizeRaf = requestAnimationFrame(() => {
+            resizeRaf = null;
+            map.invalidateSize({ pan: false, animate: false });
+        });
+    }
+
+    function getPanelMaxWidth() {
+        return Math.max(TASK_PANEL_MIN_WIDTH, Math.floor(window.innerWidth * 0.75));
+    }
+
+    function clampWidth(width) {
+        return Math.max(TASK_PANEL_MIN_WIDTH, Math.min(getPanelMaxWidth(), Math.round(width)));
+    }
+
+    function applyPanelWidth(width, persist = true) {
+        const clamped = clampWidth(width);
+        panel.style.flex = `0 0 ${clamped}px`;
+        panel.style.width = `${clamped}px`;
+        if (persist) {
+            try { localStorage.setItem(TASK_PANEL_WIDTH_KEY, String(clamped)); } catch (e) { /* storage unavailable */ }
+        }
+        invalidateMapSize();
+        return clamped;
+    }
+
+    let startWidth = TASK_PANEL_DEFAULT_WIDTH;
+    try {
+        const raw = localStorage.getItem(TASK_PANEL_WIDTH_KEY);
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed)) {
+            startWidth = parsed;
+        }
+    } catch (e) { /* storage unavailable */ }
+
+    applyPanelWidth(startWidth, false);
+
+    function stopDrag(pointerId) {
+        if (!dragState) return;
+        if (resizer.hasPointerCapture(pointerId)) {
+            resizer.releasePointerCapture(pointerId);
+        }
+        dragState = null;
+        resizer.classList.remove('is-dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        const finalWidth = panel.getBoundingClientRect().width;
+        applyPanelWidth(finalWidth, true);
+    }
+
+    resizer.addEventListener('pointerdown', e => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        dragState = {
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startWidth: panel.getBoundingClientRect().width,
+        };
+        resizer.setPointerCapture(e.pointerId);
+        resizer.classList.add('is-dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    });
+
+    resizer.addEventListener('pointermove', e => {
+        if (!dragState || dragState.pointerId !== e.pointerId) return;
+        e.preventDefault();
+        const delta = dragState.startX - e.clientX;
+        applyPanelWidth(dragState.startWidth + delta, false);
+    });
+
+    resizer.addEventListener('pointerup', e => {
+        if (!dragState || dragState.pointerId !== e.pointerId) return;
+        stopDrag(e.pointerId);
+    });
+
+    resizer.addEventListener('pointercancel', e => {
+        if (!dragState || dragState.pointerId !== e.pointerId) return;
+        stopDrag(e.pointerId);
+    });
+
+    window.addEventListener('resize', () => {
+        applyPanelWidth(panel.getBoundingClientRect().width, false);
+    });
+}
+
+wireTaskPanelResize();
 
 // ── Rendering helpers ─────────────────────────────────────────────
 function escHtml(str) {

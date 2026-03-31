@@ -1088,28 +1088,42 @@ function buildPlannerGroup(group, orderById, runPtsById) {
     wrap.className = 'planner-group';
     wrap.dataset.groupId = group.id;
 
+    const itemCount = group.items.length;
     const pinnedCount = group.items.filter(i => i.pinCoords).length;
     const groupPts = group.items.reduce((s, i) => {
         if (i.virtual) return s + (i.customPoints || 0);
         const t = getTask(i.taskName);
         return s + (t ? (t.points || 10) : 10);
     }, 0);
+    const taskIndexes = group.items
+        .map(i => orderById.get(i.id))
+        .filter(n => Number.isFinite(n));
+    let collapsedRange = `${itemCount} tasks`;
+    if (taskIndexes.length > 0) {
+        const startIdx = Math.min(...taskIndexes);
+        const endIdx = Math.max(...taskIndexes);
+        collapsedRange += ` (${startIdx}..${endIdx})`;
+    }
+    const groupMeta = group.collapsed
+        ? collapsedRange
+        : `${itemCount} tasks · ${pinnedCount} pinned · ${groupPts} pts`;
 
     const canRemove = plannerGroups.length > 1;
     const toggleLabel = group.collapsed ? '▸' : '▾';
-    const toggleText = group.collapsed ? 'Show' : 'Hide';
+    const toggleText = group.collapsed ? '👁' : '👁̶';
+    const toggleTextTitle = group.collapsed ? 'Show group items' : 'Hide group items';
     const pinsChecked = group.showPins ? 'checked' : '';
     wrap.innerHTML =
         `<div class="planner-group-header">` +
             `<span class="planner-group-drag-handle" title="Drag to reorder group">⠿</span>` +
             `<button class="planner-group-toggle" title="Expand/collapse group">${toggleLabel}</button>` +
             `<input class="planner-group-name" value="${esc(group.name)}" aria-label="Group name"/>` +
-            `<span class="planner-group-meta">${group.items.length} tasks · ${pinnedCount} pinned · ${groupPts} pts</span>` +
+            `<span class="planner-group-meta">${groupMeta}</span>` +
             `<label class="planner-group-pin-toggle-wrap" title="Show pins from this group">` +
                 `<input type="checkbox" class="planner-group-pin-toggle" ${pinsChecked}>` +
                 `<span>Pins</span>` +
             `</label>` +
-            `<button class="planner-group-toggle-text" title="Expand/collapse group">${toggleText}</button>` +
+            `<button class="planner-group-toggle-text" title="${toggleTextTitle}">${toggleText}</button>` +
             (canRemove ? `<button class="planner-group-remove" title="Delete group (moves tasks)">✕</button>` : '') +
         `</div>`;
 
@@ -1468,6 +1482,10 @@ function buildPlannerCard(item, task, pts, runPts, orderNum) {
         document.querySelectorAll('.planner-card').forEach(c => {
             c.classList.toggle('planner-card-selected', c.dataset.id === plannerSelectedId);
         });
+        // Center map on pinned task's location
+        if (item.pinCoords && plannerMap) {
+            plannerMap.setView([item.pinCoords.lat, item.pinCoords.lng], Math.max(plannerMap.getZoom(), 0));
+        }
     });
 
     // ── Completion toggle ─────────────────────────────────────────
@@ -1728,6 +1746,12 @@ function activatePlannerTab() {
 
 function selectPlannerItem(itemId) {
     plannerSelectedId = itemId;
+    // Expand the group containing this item
+    const ctx = findItemContext(itemId);
+    if (ctx && ctx.group.collapsed) {
+        ctx.group.collapsed = false;
+        savePlanner();
+    }
     renderPlanner();
     // Scroll after a brief yield so the DOM has been rebuilt
     setTimeout(() => {
