@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Route Format Converter</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a1a; color: #d8d0c0; font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; }
+  header { background: #111; border-bottom: 1px solid #3a3028; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+  header h1 { font-size: 1rem; font-weight: 600; color: #e8d48b; }
+  header span { font-size: 0.8rem; color: #888; }
+  .main { display: flex; flex: 1; min-height: 0; gap: 0; }
+  .panel { display: flex; flex-direction: column; flex: 1; min-width: 0; border-right: 1px solid #2a2420; }
+  .panel:last-child { border-right: none; }
+  .panel-header { background: #1e1b18; border-bottom: 1px solid #2a2420; padding: 8px 12px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .panel-label { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #a08860; }
+  .panel-sublabel { font-size: 0.75rem; color: #666; margin-left: auto; }
+  .panel-actions { display: flex; gap: 6px; margin-left: auto; }
+  textarea {
+    flex: 1; width: 100%; resize: none; border: none; outline: none;
+    background: #141210; color: #c8c0b0; font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.78rem; line-height: 1.5; padding: 12px; tab-size: 2;
+  }
+  textarea::placeholder { color: #444; }
+  .middle { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px; background: #171410; border-right: 1px solid #2a2420; flex-shrink: 0; }
+  button {
+    background: #2c2620; color: #c8b870; border: 1px solid #4a3e28; border-radius: 4px;
+    padding: 5px 11px; font-size: 0.78rem; cursor: pointer; white-space: nowrap;
+  }
+  button:hover { background: #3a3020; border-color: #7a6a40; color: #e8d48b; }
+  button:active { background: #4a4030; }
+  button.convert-btn { font-size: 0.85rem; padding: 7px 14px; background: #1a2a1a; color: #80c870; border-color: #3a6030; }
+  button.convert-btn:hover { background: #223022; border-color: #60a050; }
+  .convert-label { font-size: 0.7rem; color: #555; text-align: center; }
+  .status { font-size: 0.72rem; padding: 4px 8px; border-radius: 3px; text-align: center; max-width: 110px; word-break: break-word; }
+  .status.ok   { background: #1a2a1a; color: #80c870; border: 1px solid #3a6030; }
+  .status.err  { background: #2a1a1a; color: #c07060; border: 1px solid #6a3030; }
+  .status.info { background: #1a1e2a; color: #7090c8; border: 1px solid #304060; }
+  .footer { background: #111; border-top: 1px solid #2a2420; padding: 5px 14px; font-size: 0.7rem; color: #555; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Route Format Converter</h1>
+  <span>LeaguesMap planner JSON &harr; tasks-tracker-plugin CustomRoute JSON</span>
+</header>
+<div class="main">
+  <!-- LEFT: LeaguesMap -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-label">LeaguesMap</span>
+      <span class="panel-sublabel">v3 planner JSON</span>
+      <div class="panel-actions">
+        <button id="paste-left">📋 Paste</button>
+        <button id="copy-left">⎘ Copy</button>
+        <button id="clear-left">✕</button>
+      </div>
+    </div>
+    <textarea id="left" placeholder='Paste LeaguesMap planner JSON here, or use the ← convert button on the right...'></textarea>
+  </div>
+
+  <!-- MIDDLE: controls -->
+  <div class="middle">
+    <button class="convert-btn" id="to-right" title="Convert LeaguesMap → Plugin">→</button>
+    <span class="convert-label">to<br>plugin</span>
+    <div id="status" class="status info" style="display:none"></div>
+    <span class="convert-label">to<br>map</span>
+    <button class="convert-btn" id="to-left" title="Convert Plugin → LeaguesMap">←</button>
+  </div>
+
+  <!-- RIGHT: Plugin -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-label">Plugin</span>
+      <span class="panel-sublabel">CustomRoute JSON</span>
+      <div class="panel-actions">
+        <button id="paste-right">📋 Paste</button>
+        <button id="copy-right">⎘ Copy</button>
+        <button id="clear-right">✕</button>
+      </div>
+    </div>
+    <textarea id="right" placeholder='Paste plugin CustomRoute JSON here, or use the → convert button on the left...'></textarea>
+  </div>
+</div>
+<div class="footer">
+  Coordinates: plugin {x,y} ↔ map {lng,lat} (floor to convert; +0.5 for tile centre on import). Notes ↔ comments split/joined on \n\n.
+</div>
+
+<script type="module">
+import { isPluginRouteFormat, convertPluginRouteToMapData, buildPluginRouteExport }
+  from './js/data/tasks-tracker-plugin-route-bridge.js';
+
+const left   = document.getElementById('left');
+const right  = document.getElementById('right');
+const status = document.getElementById('status');
+
+function setStatus(msg, type) {
+  status.textContent = msg;
+  status.className = 'status ' + type;
+  status.style.display = 'block';
+}
+function clearStatus() { status.style.display = 'none'; }
+
+async function clipboardPaste(ta) {
+  try {
+    ta.value = await navigator.clipboard.readText();
+    clearStatus();
+  } catch {
+    setStatus('Clipboard read denied', 'err');
+  }
+}
+async function clipboardCopy(ta) {
+  if (!ta.value.trim()) { setStatus('Nothing to copy', 'info'); return; }
+  try {
+    await navigator.clipboard.writeText(ta.value);
+    setStatus('Copied!', 'ok');
+    setTimeout(clearStatus, 1800);
+  } catch {
+    setStatus('Clipboard write denied', 'err');
+  }
+}
+
+document.getElementById('paste-left').addEventListener('click',  () => clipboardPaste(left));
+document.getElementById('copy-left').addEventListener('click',   () => clipboardCopy(left));
+document.getElementById('clear-left').addEventListener('click',  () => { left.value = ''; clearStatus(); });
+document.getElementById('paste-right').addEventListener('click', () => clipboardPaste(right));
+document.getElementById('copy-right').addEventListener('click',  () => clipboardCopy(right));
+document.getElementById('clear-right').addEventListener('click', () => { right.value = ''; clearStatus(); });
+
+// LeaguesMap → Plugin
+document.getElementById('to-right').addEventListener('click', () => {
+  const src = left.value.trim();
+  if (!src) { setStatus('Left panel is empty', 'info'); return; }
+  let parsed;
+  try { parsed = JSON.parse(src); } catch (e) { setStatus('Invalid JSON: ' + e.message, 'err'); return; }
+
+  if (isPluginRouteFormat(parsed)) {
+    setStatus('Already plugin format', 'info');
+    right.value = JSON.stringify(parsed, null, 2);
+    return;
+  }
+  // Expect LeaguesMap v3
+  if (!parsed.sections || parsed.source !== 'GrootsLeagueMap') {
+    setStatus('Not a recognised LeaguesMap format', 'err'); return;
+  }
+  const routeName = parsed.name || 'My Route';
+  const sections  = parsed.sections.map(s => ({ name: s.name, items: s.items || [] }));
+  try {
+    const result = buildPluginRouteExport(sections, routeName);
+    right.value = JSON.stringify(result, null, 2);
+    setStatus('Converted ✓', 'ok');
+    setTimeout(clearStatus, 2000);
+  } catch (e) { setStatus('Conversion error: ' + e.message, 'err'); }
+});
+
+// Plugin → LeaguesMap
+document.getElementById('to-left').addEventListener('click', () => {
+  const src = right.value.trim();
+  if (!src) { setStatus('Right panel is empty', 'info'); return; }
+  let parsed;
+  try { parsed = JSON.parse(src); } catch (e) { setStatus('Invalid JSON: ' + e.message, 'err'); return; }
+
+  if (!isPluginRouteFormat(parsed)) {
+    setStatus('Not a recognised plugin format', 'err'); return;
+  }
+  try {
+    const result = convertPluginRouteToMapData(parsed);
+    delete result._pluginRouteName;
+    left.value = JSON.stringify(result, null, 2);
+    setStatus('Converted ✓', 'ok');
+    setTimeout(clearStatus, 2000);
+  } catch (e) { setStatus('Conversion error: ' + e.message, 'err'); }
+});
+</script>
+</body>
+</html>

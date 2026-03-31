@@ -1,6 +1,7 @@
 'use strict';
 
 import { fetchJsonCached } from "../data/json-cache.js";
+import { isPluginRouteFormat, convertPluginRouteToMapData, buildPluginRouteExport } from "../data/tasks-tracker-plugin-route-bridge.js";
 
 /**
  * League Task Planner
@@ -862,9 +863,16 @@ function renderPlanner() {
             `<span class="planner-ctrl-label">${flatItems.length} tasks · ${pinnedCount} pinned · ${runningTotal} pts total</span>` +
         `</div>` +
         `<div class="planner-controls-row">` +
-            `<button class="planner-line-btn" id="planner-export-btn" title="Download planner as JSON">⬇ Export JSON</button>` +
+            `<div class="planner-export-wrap" id="planner-export-wrap">` +
+                `<button class="planner-line-btn" id="planner-export-btn" title="Export planner">⬇ Export ▾</button>` +
+                `<div class="planner-export-menu" id="planner-export-menu" style="display:none">` +
+                    `<button class="planner-export-opt" id="planner-export-map-btn">⬇ LeaguesMap JSON</button>` +
+                    `<button class="planner-export-opt" id="planner-export-plugin-btn" title="Copy plugin route JSON to clipboard">⬇ Copy Plugin</button>` +
+                `</div>` +
+            `</div>` +
             `<button class="planner-line-btn" id="planner-import-btn" title="Load planner from JSON file">⬆ Import JSON</button>` +
             `<input type="file" id="planner-import-input" accept=".json,application/json" style="display:none"/>` +
+            `<button class="planner-line-btn" id="planner-import-plugin-btn" title="Paste plugin route JSON from clipboard">⬆ Paste Plugin</button>` +
             `<button class="planner-line-btn" id="planner-new-route-btn" title="Create a new empty route">+ New Route</button>` +
             `<button class="planner-line-btn" id="planner-clear-btn" title="Clear all tasks from the current route">✕ Clear</button>` +
         `</div>`;
@@ -921,19 +929,96 @@ function renderPlanner() {
             renderPlanner();
         });
     }
-    const exportBtn = ctrl.querySelector('#planner-export-btn');
-    if (exportBtn) {
-        exportBtn.addEventListener('click', () => {
+    // ── Export dropdown ────────────────────────────────────────────────────
+    const exportBtn  = ctrl.querySelector('#planner-export-btn');
+    const exportMenu = ctrl.querySelector('#planner-export-menu');
+    if (exportBtn && exportMenu) {
+        // Toggle dropdown open/closed
+        exportBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            const open = exportMenu.style.display !== 'none';
+            exportMenu.style.display = open ? 'none' : 'block';
+        });
+        // Close on outside click
+        document.addEventListener('click', () => { exportMenu.style.display = 'none'; });
+
+        // Option 1: download LeaguesMap JSON (original behaviour)
+        ctrl.querySelector('#planner-export-map-btn').addEventListener('click', () => {
+            exportMenu.style.display = 'none';
             const sections = buildExportSections();
             const data = JSON.stringify({ version: 3, taskType: 'LEAGUE_5', source: 'GrootsLeagueMap', sections }, null, 2);
             const blob = new Blob([data], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            const date = new Date().toISOString().slice(0, 10);
             a.href = url;
-            a.download = `planner-${date}.json`;
+            a.download = `planner-${new Date().toISOString().slice(0, 10)}.json`;
             a.click();
             URL.revokeObjectURL(url);
+        });
+
+        // Option 2: copy plugin CustomRoute JSON to clipboard
+        const pluginExportBtn = ctrl.querySelector('#planner-export-plugin-btn');
+        pluginExportBtn.addEventListener('click', async () => {
+            exportMenu.style.display = 'none';
+            const activeRoute = activeUserRouteId ? userRoutes.find(r => r.id === activeUserRouteId) : null;
+            const routeName = activeRouteName || (activeRoute && activeRoute.name) || 'My Route';
+            const data = JSON.stringify(buildPluginRouteExport(buildExportSections(), routeName), null, 2);
+            try {
+                await navigator.clipboard.writeText(data);
+                const orig = pluginExportBtn.textContent;
+                pluginExportBtn.textContent = '✓ Copied!';
+                setTimeout(() => { pluginExportBtn.textContent = orig; }, 1800);
+                exportMenu.style.display = 'block';
+            } catch {
+                // Fallback: download file if clipboard not available
+                const blob = new Blob([data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `plugin-route-${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+        });
+    }
+
+    // ── Paste Plugin import (clipboard) ──────────────────────────────────────
+    const pastePluginBtn = ctrl.querySelector('#planner-import-plugin-btn');
+    if (pastePluginBtn) {
+        pastePluginBtn.addEventListener('click', async () => {
+            let text;
+            try {
+                text = await navigator.clipboard.readText();
+            } catch {
+                alert('Clipboard read failed. Please paste the JSON into a text file and use ⬆ Import JSON instead.');
+                return;
+            }
+            let parsed;
+            try {
+                parsed = JSON.parse(text);
+            } catch (err) {
+                alert('Clipboard does not contain valid JSON.\n\n' + err.message);
+                return;
+            }
+            if (!isPluginRouteFormat(parsed)) {
+                alert('Clipboard JSON is not a recognised plugin route format. Use ⬆ Import JSON for LeaguesMap files.');
+                return;
+            }
+            const converted = convertPluginRouteToMapData(parsed);
+            if (!applyPlanData(converted)) {
+                alert('Failed to apply plugin route data.');
+                return;
+            }
+            const importedRouteName = converted._pluginRouteName || 'Imported Plugin Route';
+            activeRouteName = null;
+            if (!activeUserRouteId || !userRoutes.find(r => r.id === activeUserRouteId)) {
+                const nr = { id: genId(), name: importedRouteName, sections: plannerGroups };
+                userRoutes.push(nr);
+                activeUserRouteId = nr.id;
+            }
+            savePlanner();
+            redrawMapOverlays();
+            renderPlanner();
         });
     }
 
@@ -947,7 +1032,13 @@ function renderPlanner() {
             const reader = new FileReader();
             reader.onload = evt => {
                 try {
-                    const parsed = JSON.parse(evt.target.result);
+                    let parsed = JSON.parse(evt.target.result);
+                    // Auto-detect plugin CustomRoute format and convert transparently
+                    let importedRouteName = 'Imported Plan';
+                    if (isPluginRouteFormat(parsed)) {
+                        parsed = convertPluginRouteToMapData(parsed);
+                        if (parsed._pluginRouteName) importedRouteName = parsed._pluginRouteName;
+                    }
                     if (!applyPlanData(parsed)) {
                         alert('Unrecognised planner file format.');
                         return;
@@ -955,7 +1046,7 @@ function renderPlanner() {
                     activeRouteName = null;
                     // Save into active user route, creating one first if none exists
                     if (!activeUserRouteId || !userRoutes.find(r => r.id === activeUserRouteId)) {
-                        const nr = { id: genId(), name: 'Imported Plan', sections: plannerGroups };
+                        const nr = { id: genId(), name: importedRouteName, sections: plannerGroups };
                         userRoutes.push(nr);
                         activeUserRouteId = nr.id;
                     }
