@@ -26,7 +26,7 @@ const TASK_SEARCH_DEBOUNCE_MS = 100;
 
 const TIER_POINTS = {
     1: 10,
-    2: 40,
+    2: 30,
     3: 80,
     4: 200,
     5: 400,
@@ -146,7 +146,7 @@ function pointsForTask(task) {
     }
     const tierName = String(task.tierName ?? '').trim().toLowerCase();
     if (tierName === 'easy') return 10;
-    if (tierName === 'medium') return 40;
+    if (tierName === 'medium') return 30;
     if (tierName === 'hard') return 80;
     if (tierName === 'elite') return 200;
     if (tierName === 'master') return 400;

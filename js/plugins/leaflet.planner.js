@@ -22,10 +22,10 @@ const DEFAULT_GROUP_NAME = 'Main';
 
 // ─── Tier colour helpers ──────────────────────────────────────────
 const TIERS = [
-    { min: 500, name: 'Master', color: '#ffd700' },
-    { min: 250, name: 'Elite',  color: '#cc66ff' },
-    { min: 100, name: 'Hard',   color: '#ff8800' },
-    { min: 50,  name: 'Medium', color: '#4488ff' },
+    { min: 400, name: 'Master', color: '#ffd700' },
+    { min: 200, name: 'Elite',  color: '#cc66ff' },
+    { min: 80,  name: 'Hard',   color: '#ff8800' },
+    { min: 30,  name: 'Medium', color: '#4488ff' },
     { min: 0,   name: 'Easy',   color: '#44cc44' },
 ];
 
