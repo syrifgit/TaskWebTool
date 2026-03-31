@@ -12,25 +12,6 @@ function _genId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
-
-// ─── Format detection ─────────────────────────────────────────────────────────
-
-/**
- * Returns true if `parsed` looks like a plugin CustomRoute JSON rather than a
- * LeaguesMap route file.
- * @param {*} parsed
- * @returns {boolean}
- */
-export function isPluginRouteFormat(parsed) {
-    return parsed != null &&
-        typeof parsed === 'object' &&
-        !Array.isArray(parsed) &&
-        typeof parsed.name === 'string' &&
-        Array.isArray(parsed.sections) &&
-        parsed.source !== 'GrootsLeagueMap' &&
-        parsed.version == null;
-}
-
 // ─── Plugin → LeaguesMap ─────────────────────────────────────────────────────
 
 /**
@@ -49,17 +30,13 @@ export function isPluginRouteFormat(parsed) {
 export function convertPluginRouteToMapData(data) {
     const sections = (data.sections || []).map((section, sIdx) => {
         const name = section.name || `Section ${sIdx + 1}`;
-
         const rawItems = Array.isArray(section.items) ? section.items : [];
-
         const items = rawItems.flatMap(item => {
             if (item.taskId != null) {
                 return [{
-                    taskId: item.taskId,
-                    // taskName: null,
-                    // pinCoords are intentionally omitted because planner-state pins should take precedence over plugin-imported pins (which are often less accurate)
-                    // they should patch in after mergeExistingPins runs, which is after planner-state pins are loaded
+                    pinCoords: item.location ? { lat: item.location.y, lng: item.location.x } : null,
                     comments: item.note ? item.note.split('\n\n') : [],
+                    taskId: item.taskId,
                 }];
             }
             if (item.customItem) {
@@ -71,18 +48,17 @@ export function convertPluginRouteToMapData(data) {
                     virtual: true,
                     customName,
                     customDesc: ci.label || '',
-                    // pinCoords are intentionally omitted because planner-state pins should take precedence over plugin-imported pins (which are often less accurate)
-                    // they should patch in after mergeExistingPins runs, which is after planner-state pins are loaded
+                    pinCoords: item.location ? { lat: item.location.y, lng: item.location.x, } : null,
                     comments: note ? note.split('\n\n') : [],
                 }];
             }
             return [];
         });
-
-        return { id: _genId(), name, collapsed: false, showPins: true, items };
+        return { id: section.id || _genId(), name, items };
     });
 
     return {
+        id: data.id || _genId(),
         version: 3,
         taskType: data.taskType || 'LEAGUE_5',
         source: 'GrootsLeagueMap',
@@ -103,7 +79,7 @@ export function convertPluginRouteToMapData(data) {
  * @param {string} routeName      - Name for the plugin route.
  * @returns {object} Plugin CustomRoute JSON.
  */
-export function buildPluginRouteExport(exportSections, routeName) {
+export function convertMapDataToPluginRoute(exportSections, routeName) {
     const pluginSections = exportSections.map(section => {
         const items = (section.items || []).flatMap(item => {
             if (item.virtual) {
@@ -111,30 +87,32 @@ export function buildPluginRouteExport(exportSections, routeName) {
                 if (item.id) customItem.id = item.id;
                 if (item.customDesc) customItem.label = item.customDesc;
                 if (item.customName) customItem.name  = item.customName;
-                const ci = { customItem };
+                const routeItem = { customItem };
                 if (Array.isArray(item.comments) && item.comments.length) {
-                    ci.note = item.comments.join('\n\n');
+                    routeItem.note = item.comments.join('\n\n');
                 }
                 if (item.pinCoords != null) {
-                    ci.location = { x: Math.floor(item.pinCoords.lng), y: Math.floor(item.pinCoords.lat), plane: 0 };
+                    routeItem.location = { x: Math.floor(item.pinCoords.lng), y: Math.floor(item.pinCoords.lat), plane: 0 };
                 }
-                return [ci];
+                return routeItem;
             }
             if (item.taskId == null) return [];
-            const pi = { taskId: item.taskId };
+            
+            const routeItem = { taskId: item.taskId };
             if (Array.isArray(item.comments) && item.comments.length) {
-                pi.note = item.comments.join('\n\n');
+                routeItem.note = item.comments.join('\n\n');
             }
             if (item.pinCoords != null) {
-                pi.location = { x: Math.floor(item.pinCoords.lng), y: Math.floor(item.pinCoords.lat), plane: 0 };
+                routeItem.location = { x: Math.floor(item.pinCoords.lng), y: Math.floor(item.pinCoords.lat), plane: 0 };
             }
-            return [pi];
+            return routeItem;        
         });
         return { id: section.id || genId(), name: section.name || 'Section', items };
     });
 
     return {
-        name: routeName || 'My Route',
+        id: exportSections.id || genId(),
+        name: routeName,
         taskType: 'LEAGUE_5',
         sections: pluginSections,
     };
@@ -149,17 +127,46 @@ export function buildPluginRouteExport(exportSections, routeName) {
  */
 export function mergeExistingPins(converted, existingSections) {
     const existing = new Map();
+    const existingCustom = new Map();
     for (const group of existingSections || []) {
         for (const item of group.items || []) {
             if (item.taskId != null && item.pinCoords != null) {
                 existing.set(item.taskId, item.pinCoords);
             }
+            if (item.virtual && item.id && item.pinCoords != null) {
+                existingCustom.set(item.id, item.pinCoords);
+            }
         }
     }
-    for (const section of converted.sections) {
-        for (const item of section.items) {
-            if (item.taskId != null && item.pinCoords == null && existing.has(item.taskId)) {
-                item.pinCoords = existing.get(item.taskId);
+    
+    for (const section of converted.sections || []) {
+        for (const imported of section.items) {
+            // has a task id
+            if (imported.taskId != null) {
+                // already exists a task with pin
+                if (existing.has(imported.taskId)) {
+                    const importedCoords = imported.pinCoords;
+                    const existingCoords = existing.get(imported.taskId);
+                    const importedPrec = getPrecision(importedCoords);
+                    const prevPrec = getPrecision(existingCoords);
+                    if (importedCoords == null || importedPrec < prevPrec) {
+                        console.log("imported task pin precision is worse, using existing coords for taskId", imported.taskId, { importedCoords, existingCoords });
+                        imported.pinCoords = existingCoords;
+                    }
+                }
+            }
+            // virtual custom item with id
+            if (imported.virtual && imported.id) {
+                if (existingCustom.has(imported.id)) {
+                    const importedCoords = imported.pinCoords;
+                    const existingCoords = existingCustom.get(imported.id);
+                    const importedPrec = getPrecision(importedCoords);
+                    const prevPrec = getPrecision(existingCoords);
+                    if (importedCoords == null || importedPrec < prevPrec) {
+                        console.log("imported custom item pin precision is worse, using existing coords for id", imported.id, { importedCoords, existingCoords });
+                        imported.pinCoords = existingCoords;
+                    }
+                }
             }
         }
     }
@@ -168,4 +175,11 @@ export function mergeExistingPins(converted, existingSections) {
 
 function genId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+function getPrecision(coord) {
+    if (!coord) return 0;
+    const latDec = (coord.lat.toString().split('.')[1] || '').length;
+    const lngDec = (coord.lng.toString().split('.')[1] || '').length;
+    return Math.max(latDec, lngDec);
 }

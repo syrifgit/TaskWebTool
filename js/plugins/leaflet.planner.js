@@ -1,7 +1,7 @@
 'use strict';
 
 import { fetchJsonCached } from "../data/json-cache.js";
-import { isPluginRouteFormat, convertPluginRouteToMapData, buildPluginRouteExport } from "../data/tasks-tracker-plugin-route-bridge.js";
+import { convertPluginRouteToMapData, convertMapDataToPluginRoute } from "../data/tasks-tracker-plugin-route-bridge.js";
 import { mergeExistingPins } from "../data/tasks-tracker-plugin-route-bridge.js";
 
 /**
@@ -975,8 +975,8 @@ function renderPlanner() {
         pluginExportBtn.addEventListener('click', async () => {
             exportMenu.style.display = 'none';
             const activeRoute = activeUserRouteId ? userRoutes.find(r => r.id === activeUserRouteId) : null;
-            const routeName = activeRouteName || (activeRoute && activeRoute.name) || 'My Route';
-            const data = JSON.stringify(buildPluginRouteExport(buildExportSections(), routeName), null, 2);
+            const routeName = activeRouteName || (activeRoute && activeRoute.name);
+            const data = JSON.stringify(convertMapDataToPluginRoute(buildExportSections(), routeName), null, 2);
             try {
                 await navigator.clipboard.writeText(data);
                 const orig = pluginExportBtn.textContent;
@@ -1010,10 +1010,6 @@ function renderPlanner() {
             reader.onload = evt => {
                 try {
                     const parsed = JSON.parse(evt.target.result);
-                    if (isPluginRouteFormat(parsed)) {
-                        alert('Import blocked: The file appears to be in a plugin route format. Use the "⬆ Paste Plugin" option and paste the JSON content instead.');
-                        return;
-                    }
                     if (!applyPlanData(parsed)) {
                         alert('Unrecognised planner file format.');
                         return;
@@ -1021,7 +1017,7 @@ function renderPlanner() {
                     activeRouteName = null;
                     // Save into active user route, creating one first if none exists
                     if (!activeUserRouteId || !userRoutes.find(r => r.id === activeUserRouteId)) {
-                        const nr = { id: genId(), name: importedRouteName, sections: plannerGroups };
+                        const nr = { id: genId(), name: 'Imported Plan', sections: plannerGroups };
                         userRoutes.push(nr);
                         activeUserRouteId = nr.id;
                     }
@@ -1057,37 +1053,22 @@ function renderPlanner() {
                     alert('Clipboard does not contain valid JSON.\n\n' + err.message);
                     return;
                 }
-                if (!isPluginRouteFormat(parsed)) {
-                    alert('Clipboard JSON is not a recognised plugin route format. Use ⬆ Import JSON for LeaguesMap files.');
+                const convertedData = convertPluginRouteToMapData(parsed);
+                const converted = mergeExistingPins(convertedData, plannerGroups);
+                if (!applyPlanData(converted)) {
+                    alert('Failed to apply plugin route data.');
                     return;
                 }
-                // Safe import: only allow if section IDs match or no user route is selected
-                const importedSections = convertPluginRouteToMapData(parsed).sections || [];
-                const importedSectionIds = new Set(importedSections.map(s => s.id));
-                const currentSectionIds = new Set((plannerGroups || []).map(s => s.id));
-                const sectionIdOverlap = [...importedSectionIds].filter(id => currentSectionIds.has(id));
-                if (
-                    (activeUserRouteId === null) ||
-                    (sectionIdOverlap.length > 0 && importedSectionIds.size === currentSectionIds.size && sectionIdOverlap.length === importedSectionIds.size)
-                ) {
-                    const converted = mergeExistingPins(importedSections.length ? { ...convertPluginRouteToMapData(parsed), sections: importedSections } : convertPluginRouteToMapData(parsed), plannerGroups);
-                    if (!applyPlanData(converted)) {
-                        alert('Failed to apply plugin route data.');
-                        return;
-                    }
-                    const importedRouteName = converted._pluginRouteName || 'Imported Plugin Route';
-                    activeRouteName = null;
-                    if (!activeUserRouteId || !userRoutes.find(r => r.id === activeUserRouteId)) {
-                        const nr = { id: genId(), name: importedRouteName, sections: plannerGroups };
-                        userRoutes.push(nr);
-                        activeUserRouteId = nr.id;
-                    }
-                    savePlanner();
-                    redrawMapOverlays();
-                    renderPlanner();
-                } else {
-                    alert('Import blocked: The imported route does not match the currently selected plan. Please select the correct plan or "None" before importing.');
+                const importedRouteName = converted._pluginRouteName || 'Imported Plugin Route';
+                activeRouteName = null;
+                if (!activeUserRouteId || !userRoutes.find(r => r.id === activeUserRouteId)) {
+                    const nr = { id: genId(), name: importedRouteName, sections: plannerGroups };
+                    userRoutes.push(nr);
+                    activeUserRouteId = nr.id;
                 }
+                savePlanner();
+                redrawMapOverlays();
+                renderPlanner();
             });
         }
     }
