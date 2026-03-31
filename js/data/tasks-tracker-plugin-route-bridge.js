@@ -5,41 +5,13 @@
  *
  * Format bridge between the tasks-tracker-plugin CustomRoute JSON and the
  * LeaguesMap planner (v3) JSON.
- *
- * Plugin format:
- *   { name, taskType?, author?, description?,
- *     sections: [{ name, description?,
- *       items:   [{ taskId, note? } | { customItem: { id, type } }]
- *       taskIds: [number, ...]   // legacy alternative to items
- *     }] }
- *
- * LeaguesMap v3 format:
- *   { version: 3, taskType, source: "GrootsLeagueMap",
- *     sections: [{ id, name, collapsed, showPins,
- *       items: [{ id, taskId, taskName, pinCoords, comments }
- *               | { id, virtual, customName, customDesc, pinCoords, comments }] }] }
- *
- * Coordinate translation:
- *   Plugin stores integer tile coordinates { x, y, plane } (WorldPoint).
- *   LeaguesMap stores Leaflet { lat, lng } where lat=Y, lng=X, as a precise
- *   floating-point position within the tile set by the user.
- *
- *   Plugin → Map:  pinCoords = { lat: y + 0.5, lng: x + 0.5 }  (tile centre)
- *   Map → Plugin:  location  = { x: floor(lng), y: floor(lat), plane: 0 }
- *
- *   On re-import from plugin, precise user-placed pins are replaced with tile
- *   centres — this is inherent to the plugin's integer tile coordinate format.
+ * 
  */
 
 function _genId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
-const _CUSTOM_LABELS = {
-    bank:           'Bank',
-    home_teleport:  'Home Teleport',
-    fairy_ring:     'Fairy Ring',
-};
 
 // ─── Format detection ─────────────────────────────────────────────────────────
 
@@ -78,34 +50,30 @@ export function convertPluginRouteToMapData(data) {
     const sections = (data.sections || []).map((section, sIdx) => {
         const name = section.name || `Section ${sIdx + 1}`;
 
-        // Support both current "items" format and legacy "taskIds" array
-        const rawItems =
-            Array.isArray(section.items) && section.items.length > 0
-                ? section.items
-                : Array.isArray(section.taskIds)
-                    ? section.taskIds.map(id => ({ taskId: id }))
-                    : [];
+        const rawItems = Array.isArray(section.items) ? section.items : [];
 
         const items = rawItems.flatMap(item => {
             if (item.taskId != null) {
-                const loc = item.location;
                 return [{
-                    id: _genId(),
                     taskId: item.taskId,
-                    taskName: null,
-                    pinCoords: loc != null ? { lat: loc.y + 0.5, lng: loc.x + 0.5 } : null,
+                    // taskName: null,
+                    // pinCoords are intentionally omitted because planner-state pins should take precedence over plugin-imported pins (which are often less accurate)
+                    // they should patch in after mergeExistingPins runs, which is after planner-state pins are loaded
                     comments: item.note ? item.note.split('\n\n') : [],
                 }];
             }
             if (item.customItem) {
-                const loc = item.location;
+                const ci  = item.customItem;
+                const note = item.note != null ? item.note : null;
+                const customName = ci.name || 'Custom Stop';
                 return [{
-                    id: _genId(),
+                    id: ci.id,
                     virtual: true,
-                    customName: _CUSTOM_LABELS[item.customItem.type] || item.customItem.type || 'Custom Stop',
-                    customDesc: '',
-                    pinCoords: loc != null ? { lat: loc.y + 0.5, lng: loc.x + 0.5 } : null,
-                    comments: item.note ? item.note.split('\n\n') : [],
+                    customName,
+                    customDesc: ci.label || '',
+                    // pinCoords are intentionally omitted because planner-state pins should take precedence over plugin-imported pins (which are often less accurate)
+                    // they should patch in after mergeExistingPins runs, which is after planner-state pins are loaded
+                    comments: note ? note.split('\n\n') : [],
                 }];
             }
             return [];
@@ -139,7 +107,11 @@ export function buildPluginRouteExport(exportSections, routeName) {
     const pluginSections = exportSections.map(section => {
         const items = (section.items || []).flatMap(item => {
             if (item.virtual) {
-                const ci = { customItem: { id: _genId().slice(0, 8), type: item.customName || 'custom' } };
+                const customItem = { id: _genId().slice(0, 8) };
+                if (item.id) customItem.id = item.id;
+                if (item.customDesc) customItem.label = item.customDesc;
+                if (item.customName) customItem.name  = item.customName;
+                const ci = { customItem };
                 if (Array.isArray(item.comments) && item.comments.length) {
                     ci.note = item.comments.join('\n\n');
                 }
@@ -158,7 +130,7 @@ export function buildPluginRouteExport(exportSections, routeName) {
             }
             return [pi];
         });
-        return { name: section.name || 'Section', items };
+        return { id: section.id || genId(), name: section.name || 'Section', items };
     });
 
     return {
@@ -166,4 +138,34 @@ export function buildPluginRouteExport(exportSections, routeName) {
         taskType: 'LEAGUE_5',
         sections: pluginSections,
     };
+}
+
+/**
+ * Merge existing pinCoords for task items where imported pinCoords is null.
+ * Used to preserve user-placed pins when importing plugin routes.
+ * @param {object} converted - LeaguesMap route object (from plugin)
+ * @param {Array} existingSections - Current LeaguesMap sections (plannerGroups)
+ * @returns {object} Mutated converted object
+ */
+export function mergeExistingPins(converted, existingSections) {
+    const existing = new Map();
+    for (const group of existingSections || []) {
+        for (const item of group.items || []) {
+            if (item.taskId != null && item.pinCoords != null) {
+                existing.set(item.taskId, item.pinCoords);
+            }
+        }
+    }
+    for (const section of converted.sections) {
+        for (const item of section.items) {
+            if (item.taskId != null && item.pinCoords == null && existing.has(item.taskId)) {
+                item.pinCoords = existing.get(item.taskId);
+            }
+        }
+    }
+    return converted;
+}
+
+function genId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }

@@ -2,6 +2,7 @@
 
 import { fetchJsonCached } from "../data/json-cache.js";
 import { isPluginRouteFormat, convertPluginRouteToMapData, buildPluginRouteExport } from "../data/tasks-tracker-plugin-route-bridge.js";
+import { mergeExistingPins } from "../data/tasks-tracker-plugin-route-bridge.js";
 
 /**
  * League Task Planner
@@ -863,16 +864,21 @@ function renderPlanner() {
             `<span class="planner-ctrl-label">${flatItems.length} tasks · ${pinnedCount} pinned · ${runningTotal} pts total</span>` +
         `</div>` +
         `<div class="planner-controls-row">` +
-            `<div class="planner-export-wrap" id="planner-export-wrap">` +
+            `<div class="planner-dropdown-wrap" id="planner-export-wrap">` +
                 `<button class="planner-line-btn" id="planner-export-btn" title="Export planner">⬇ Export ▾</button>` +
-                `<div class="planner-export-menu" id="planner-export-menu" style="display:none">` +
-                    `<button class="planner-export-opt" id="planner-export-map-btn">⬇ LeaguesMap JSON</button>` +
-                    `<button class="planner-export-opt" id="planner-export-plugin-btn" title="Copy plugin route JSON to clipboard">⬇ Copy Plugin</button>` +
+                `<div class="planner-dropdown-menu" id="planner-export-menu" style="display:none">` +
+                    `<button class="planner-dropdown-opt" id="planner-export-map-btn" title="Download planner as JSON">⬇ LeaguesMap JSON</button>` +
+                    `<button class="planner-dropdown-opt" id="planner-export-plugin-btn" title="Copy plugin route JSON to clipboard">⬇ Copy Plugin</button>` +
                 `</div>` +
             `</div>` +
-            `<button class="planner-line-btn" id="planner-import-btn" title="Load planner from JSON file">⬆ Import JSON</button>` +
+            `<div class="planner-dropdown-wrap" id="planner-import-wrap">` +
+                `<button class="planner-line-btn" id="planner-import-btn" title="Import planner">⬆ Import ▾</button>` +
+                `<div class="planner-dropdown-menu" id="planner-import-menu" style="display:none">` +
+                    `<button class="planner-dropdown-opt" id="planner-import-map-btn" title="Load planner from JSON file">⬆ LeaguesMap JSON</button>` +
+                    `<button class="planner-dropdown-opt" id="planner-import-plugin-btn" title="Paste plugin route JSON from clipboard">⬆ Paste Plugin</button>` +
+                `</div>` +
+            `</div>` +
             `<input type="file" id="planner-import-input" accept=".json,application/json" style="display:none"/>` +
-            `<button class="planner-line-btn" id="planner-import-plugin-btn" title="Paste plugin route JSON from clipboard">⬆ Paste Plugin</button>` +
             `<button class="planner-line-btn" id="planner-new-route-btn" title="Create a new empty route">+ New Route</button>` +
             `<button class="planner-line-btn" id="planner-clear-btn" title="Clear all tasks from the current route">✕ Clear</button>` +
         `</div>`;
@@ -929,20 +935,28 @@ function renderPlanner() {
             renderPlanner();
         });
     }
+
+    const createDropdown = (btn, menu) => {
+        if (btn && menu) {
+            // Toggle dropdown open/closed
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                const open = menu.style.display !== 'none';
+                menu.style.display = open ? 'none' : 'block';
+            }
+            );
+            // Close on outside click
+            document.addEventListener('click', () => { menu.style.display = 'none'; });
+        }
+    };
+
     // ── Export dropdown ────────────────────────────────────────────────────
     const exportBtn  = ctrl.querySelector('#planner-export-btn');
     const exportMenu = ctrl.querySelector('#planner-export-menu');
     if (exportBtn && exportMenu) {
-        // Toggle dropdown open/closed
-        exportBtn.addEventListener('click', e => {
-            e.stopPropagation();
-            const open = exportMenu.style.display !== 'none';
-            exportMenu.style.display = open ? 'none' : 'block';
-        });
-        // Close on outside click
-        document.addEventListener('click', () => { exportMenu.style.display = 'none'; });
+        createDropdown(exportBtn, exportMenu);
 
-        // Option 1: download LeaguesMap JSON (original behaviour)
+        // Option 1: download LeaguesMap JSON
         ctrl.querySelector('#planner-export-map-btn').addEventListener('click', () => {
             exportMenu.style.display = 'none';
             const sections = buildExportSections();
@@ -982,62 +996,23 @@ function renderPlanner() {
         });
     }
 
-    // ── Paste Plugin import (clipboard) ──────────────────────────────────────
-    const pastePluginBtn = ctrl.querySelector('#planner-import-plugin-btn');
-    if (pastePluginBtn) {
-        pastePluginBtn.addEventListener('click', async () => {
-            let text;
-            try {
-                text = await navigator.clipboard.readText();
-            } catch {
-                alert('Clipboard read failed. Please paste the JSON into a text file and use ⬆ Import JSON instead.');
-                return;
-            }
-            let parsed;
-            try {
-                parsed = JSON.parse(text);
-            } catch (err) {
-                alert('Clipboard does not contain valid JSON.\n\n' + err.message);
-                return;
-            }
-            if (!isPluginRouteFormat(parsed)) {
-                alert('Clipboard JSON is not a recognised plugin route format. Use ⬆ Import JSON for LeaguesMap files.');
-                return;
-            }
-            const converted = convertPluginRouteToMapData(parsed);
-            if (!applyPlanData(converted)) {
-                alert('Failed to apply plugin route data.');
-                return;
-            }
-            const importedRouteName = converted._pluginRouteName || 'Imported Plugin Route';
-            activeRouteName = null;
-            if (!activeUserRouteId || !userRoutes.find(r => r.id === activeUserRouteId)) {
-                const nr = { id: genId(), name: importedRouteName, sections: plannerGroups };
-                userRoutes.push(nr);
-                activeUserRouteId = nr.id;
-            }
-            savePlanner();
-            redrawMapOverlays();
-            renderPlanner();
-        });
-    }
-
-    const importBtn   = ctrl.querySelector('#planner-import-btn');
+    // ── Import dropdown ────────────────────────────────────────────────────
+    const importBtn  = ctrl.querySelector('#planner-import-btn');
+    const importMenu = ctrl.querySelector('#planner-import-menu');
     const importInput = ctrl.querySelector('#planner-import-input');
-    if (importBtn && importInput) {
-        importBtn.addEventListener('click', () => importInput.click());
+    if (importBtn && importMenu && importInput) {
+        createDropdown(importBtn, importMenu);
+
         importInput.addEventListener('change', () => {
             const file = importInput.files[0];
             if (!file) return;
             const reader = new FileReader();
             reader.onload = evt => {
                 try {
-                    let parsed = JSON.parse(evt.target.result);
-                    // Auto-detect plugin CustomRoute format and convert transparently
-                    let importedRouteName = 'Imported Plan';
+                    const parsed = JSON.parse(evt.target.result);
                     if (isPluginRouteFormat(parsed)) {
-                        parsed = convertPluginRouteToMapData(parsed);
-                        if (parsed._pluginRouteName) importedRouteName = parsed._pluginRouteName;
+                        alert('Import blocked: The file appears to be in a plugin route format. Use the "⬆ Paste Plugin" option and paste the JSON content instead.');
+                        return;
                     }
                     if (!applyPlanData(parsed)) {
                         alert('Unrecognised planner file format.');
@@ -1060,6 +1035,61 @@ function renderPlanner() {
             };
             reader.readAsText(file);
         });
+
+        // Option 1: upload LeaguesMap JSON by file input
+        ctrl.querySelector('#planner-import-map-btn').addEventListener('click', () => importInput.click());
+
+        // Option 2: paste plugin CustomRoute JSON from clipboard
+        const pastePluginBtn = ctrl.querySelector('#planner-import-plugin-btn');
+        if (pastePluginBtn) {
+            pastePluginBtn.addEventListener('click', async () => {
+                let text;
+                try {
+                    text = await navigator.clipboard.readText();
+                } catch {
+                    alert('Clipboard read failed. Please paste the JSON into a text file and use ⬆ Import JSON instead.');
+                    return;
+                }
+                let parsed;
+                try {
+                    parsed = JSON.parse(text);
+                } catch (err) {
+                    alert('Clipboard does not contain valid JSON.\n\n' + err.message);
+                    return;
+                }
+                if (!isPluginRouteFormat(parsed)) {
+                    alert('Clipboard JSON is not a recognised plugin route format. Use ⬆ Import JSON for LeaguesMap files.');
+                    return;
+                }
+                // Safe import: only allow if section IDs match or no user route is selected
+                const importedSections = convertPluginRouteToMapData(parsed).sections || [];
+                const importedSectionIds = new Set(importedSections.map(s => s.id));
+                const currentSectionIds = new Set((plannerGroups || []).map(s => s.id));
+                const sectionIdOverlap = [...importedSectionIds].filter(id => currentSectionIds.has(id));
+                if (
+                    (activeUserRouteId === null) ||
+                    (sectionIdOverlap.length > 0 && importedSectionIds.size === currentSectionIds.size && sectionIdOverlap.length === importedSectionIds.size)
+                ) {
+                    const converted = mergeExistingPins(importedSections.length ? { ...convertPluginRouteToMapData(parsed), sections: importedSections } : convertPluginRouteToMapData(parsed), plannerGroups);
+                    if (!applyPlanData(converted)) {
+                        alert('Failed to apply plugin route data.');
+                        return;
+                    }
+                    const importedRouteName = converted._pluginRouteName || 'Imported Plugin Route';
+                    activeRouteName = null;
+                    if (!activeUserRouteId || !userRoutes.find(r => r.id === activeUserRouteId)) {
+                        const nr = { id: genId(), name: importedRouteName, sections: plannerGroups };
+                        userRoutes.push(nr);
+                        activeUserRouteId = nr.id;
+                    }
+                    savePlanner();
+                    redrawMapOverlays();
+                    renderPlanner();
+                } else {
+                    alert('Import blocked: The imported route does not match the currently selected plan. Please select the correct plan or "None" before importing.');
+                }
+            });
+        }
     }
     const clearBtn = ctrl.querySelector('#planner-clear-btn');
     if (clearBtn) {

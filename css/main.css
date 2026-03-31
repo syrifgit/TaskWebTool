@@ -901,11 +901,11 @@ img.huechange { filter: hue-rotate(120deg); }
 }
 
 /* Export dropdown */
-.planner-export-wrap {
+.planner-dropdown-wrap {
     position: relative;
     display: inline-block;
 }
-.planner-export-menu {
+.planner-dropdown-menu {
     position: absolute;
     top: calc(100% + 2px);
     left: 0;
@@ -916,7 +916,7 @@ img.huechange { filter: hue-rotate(120deg); }
     min-width: 150px;
     box-shadow: 0 3px 10px rgba(0,0,0,0.7);
 }
-.planner-export-opt {
+.planner-dropdown-opt {
     display: block;
     width: 100%;
     padding: 5px 10px;
@@ -929,8 +929,8 @@ img.huechange { filter: hue-rotate(120deg); }
     cursor: pointer;
     white-space: nowrap;
 }
-.planner-export-opt:last-child { border-bottom: none; }
-.planner-export-opt:hover { background: #2a2000; color: #c8a040; }
+.planner-dropdown-opt:last-child { border-bottom: none; }
+.planner-dropdown-opt:hover { background: #2a2000; color: #c8a040; }
 
 /* Planner groups */
 .planner-group {
