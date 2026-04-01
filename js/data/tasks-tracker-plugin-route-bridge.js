@@ -42,12 +42,11 @@ export function convertPluginRouteToMapData(data) {
             if (item.customItem) {
                 const ci  = item.customItem;
                 const note = item.note != null ? item.note : null;
-                const customName = ci.name || 'Custom Stop';
                 return [{
                     id: ci.id,
                     virtual: true,
-                    customName,
-                    customDesc: ci.label || '',
+                    customName: ci.label || 'Custom Stop',
+                    customDesc: ci.description || '',
                     pinCoords: item.location ? { lat: item.location.y, lng: item.location.x, } : null,
                     comments: note ? note.split('\n\n') : [],
                 }];
