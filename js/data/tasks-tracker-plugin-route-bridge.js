@@ -89,8 +89,8 @@ export function convertMapDataToPluginRoute(exportSections, routeName, taskType)
             if (item.virtual) {
                 const customItem = { id: _genId().slice(0, 8) };
                 if (item.id) customItem.id = item.id;
-                if (item.customDesc) customItem.label = item.customDesc;
-                if (item.customName) customItem.name  = item.customName;
+                if (item.customDesc) customItem.description = item.customDesc;
+                if (item.customName) customItem.label  = item.customName;
                 const routeItem = { customItem };
                 if (Array.isArray(item.comments) && item.comments.length) {
                     routeItem.note = item.comments.join('\n\n');
