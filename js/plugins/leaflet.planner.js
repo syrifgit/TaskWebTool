@@ -21,6 +21,7 @@ import { mergeExistingPins } from "../data/tasks-tracker-plugin-route-bridge.js"
 const PLANNER_KEY    = 'league_planner_v1';
 const ROUTES_KEY     = 'league_planner_routes_v1';
 const DEFAULT_GROUP_NAME = 'Main';
+const TASK_TYPE =  'LEAGUE_5';
 
 // ─── Tier colour helpers ──────────────────────────────────────────
 const TIERS = [
@@ -960,7 +961,7 @@ function renderPlanner() {
         ctrl.querySelector('#planner-export-map-btn').addEventListener('click', () => {
             exportMenu.style.display = 'none';
             const sections = buildExportSections();
-            const data = JSON.stringify({ version: 3, taskType: 'LEAGUE_5', source: 'GrootsLeagueMap', sections }, null, 2);
+            const data = JSON.stringify({ version: 3, taskType: TASK_TYPE, source: 'GrootsLeagueMap', sections }, null, 2);
             const blob = new Blob([data], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -976,7 +977,7 @@ function renderPlanner() {
             exportMenu.style.display = 'none';
             const activeRoute = activeUserRouteId ? userRoutes.find(r => r.id === activeUserRouteId) : null;
             const routeName = activeRouteName || (activeRoute && activeRoute.name);
-            const data = JSON.stringify(convertMapDataToPluginRoute(buildExportSections(), routeName), null, 2);
+            const data = JSON.stringify(convertMapDataToPluginRoute(buildExportSections(), routeName, TASK_TYPE), null, 2);
             try {
                 await navigator.clipboard.writeText(data);
                 const orig = pluginExportBtn.textContent;

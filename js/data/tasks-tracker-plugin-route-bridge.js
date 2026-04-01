@@ -83,7 +83,7 @@ export function convertPluginRouteToMapData(data) {
  * @param {string} routeName      - Name for the plugin route.
  * @returns {object} Plugin CustomRoute JSON.
  */
-export function convertMapDataToPluginRoute(exportSections, routeName) {
+export function convertMapDataToPluginRoute(exportSections, routeName, taskType) {
     const pluginSections = exportSections.map(section => {
         const items = (section.items || []).flatMap(item => {
             if (item.virtual) {
@@ -117,7 +117,7 @@ export function convertMapDataToPluginRoute(exportSections, routeName) {
     return {
         id: exportSections.id || genId(),
         name: routeName,
-        taskType: 'LEAGUE_5',
+        taskType: taskType,
         sections: pluginSections,
     };
 }
