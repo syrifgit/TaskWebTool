@@ -57,10 +57,14 @@ export function convertPluginRouteToMapData(data) {
         return { id: section.id || _genId(), name, items };
     });
 
+    if (!data.id) {
+        throw new Error("Plugin route data must have an id");
+    }
+
     return {
-        id: data.id || _genId(),
+        id: data.id,
         version: 3,
-        taskType: data.taskType || 'LEAGUE_5',
+        taskType: data.taskType,
         source: 'GrootsLeagueMap',
         sections,
         _pluginRouteName: data.name || null,

@@ -1055,17 +1055,30 @@ function renderPlanner() {
                 }
                 const convertedData = convertPluginRouteToMapData(parsed);
                 const converted = mergeExistingPins(convertedData, plannerGroups);
-                if (!applyPlanData(converted)) {
+                const importedRouteName = converted._pluginRouteName || 'Imported Plugin Route';
+                const importedRouteId = converted.id;
+
+                let importedSections = Array.isArray(converted.sections) ? converted.sections : plannerGroups;
+                let importedRoute = userRoutes.find(r => r.id === importedRouteId);
+                if (!importedRoute) {
+                    importedRoute = {
+                        id: importedRouteId,
+                        name: importedRouteName,
+                        sections: importedSections
+                    };
+                    userRoutes.push(importedRoute);
+                } else {
+                    importedRoute.sections = importedSections;
+                }
+
+                activeUserRouteId = importedRouteId;
+                activeRouteName = null;
+                const planApplied = applyPlanData(converted);
+                if (!planApplied) {
                     alert('Failed to apply plugin route data.');
                     return;
                 }
-                const importedRouteName = converted._pluginRouteName || 'Imported Plugin Route';
-                activeRouteName = null;
-                if (!activeUserRouteId || !userRoutes.find(r => r.id === activeUserRouteId)) {
-                    const nr = { id: genId(), name: importedRouteName, sections: plannerGroups };
-                    userRoutes.push(nr);
-                    activeUserRouteId = nr.id;
-                }
+
                 savePlanner();
                 redrawMapOverlays();
                 renderPlanner();
