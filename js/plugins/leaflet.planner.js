@@ -828,7 +828,7 @@ function renderPlanner() {
     const ctrl = document.createElement('div');
     ctrl.id = 'planner-controls';
     ctrl.className = 'planner-controls';
-    const pinnedCount = flatItems.filter(i => i.pinCoords).length;
+    const taskCount = flatItems.filter(i => !i.virtual).length;
     let runningTotal = flatItems.reduce((s, i) => {
         if (i.virtual) return s + (i.customPoints || 0);
         const t = getTask(i.taskName);
@@ -859,7 +859,7 @@ function renderPlanner() {
             `<span class="planner-ctrl-sep"></span>` +
             `<button class="planner-line-btn${plannerPinsVisible ? ' planner-line-btn-active' : ''}" id="planner-pins-toggle">Pins</button>` +
             `<span class="planner-ctrl-sep"></span>` +
-            `<span class="planner-ctrl-label">${flatItems.length} tasks · ${pinnedCount} pinned · ${runningTotal} pts total</span>` +
+            `<span class="planner-ctrl-label">${taskCount} tasks · ${runningTotal} pts total</span>` +
         `</div>` +
         `<div class="planner-controls-row">` +
             `<button class="planner-line-btn" id="planner-export-btn" title="Download planner as JSON">⬇ Export JSON</button>` +
