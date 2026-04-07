@@ -253,6 +253,11 @@ function buildExportSections() {
     }));
 }
 
+function getCurrentRouteName() {
+    const activeRoute = activeUserRouteId ? userRoutes.find(r => r.id === activeUserRouteId) : null;
+    return activeRouteName || (activeRoute && activeRoute.name) || 'My Plan';
+}
+
 function genId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
@@ -961,7 +966,13 @@ function renderPlanner() {
         ctrl.querySelector('#planner-export-map-btn').addEventListener('click', () => {
             exportMenu.style.display = 'none';
             const sections = buildExportSections();
-            const data = JSON.stringify({ version: 3, taskType: TASK_TYPE, source: 'GrootsLeagueMap', sections }, null, 2);
+            const data = JSON.stringify({
+                version: 3,
+                name: getCurrentRouteName(),
+                taskType: TASK_TYPE,
+                source: 'GrootsLeagueMap',
+                sections,
+            }, null, 2);
             const blob = new Blob([data], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -975,8 +986,7 @@ function renderPlanner() {
         const pluginExportBtn = ctrl.querySelector('#planner-export-plugin-btn');
         pluginExportBtn.addEventListener('click', async () => {
             exportMenu.style.display = 'none';
-            const activeRoute = activeUserRouteId ? userRoutes.find(r => r.id === activeUserRouteId) : null;
-            const routeName = activeRouteName || (activeRoute && activeRoute.name);
+            const routeName = getCurrentRouteName();
             const data = JSON.stringify(convertMapDataToPluginRoute(buildExportSections(), routeName, TASK_TYPE), null, 2);
             try {
                 await navigator.clipboard.writeText(data);
@@ -1018,9 +1028,15 @@ function renderPlanner() {
                     activeRouteName = null;
                     // Save into active user route, creating one first if none exists
                     if (!activeUserRouteId || !userRoutes.find(r => r.id === activeUserRouteId)) {
-                        const nr = { id: genId(), name: 'Imported Plan', sections: plannerGroups };
+                        const nr = {
+                            id: genId(),
+                            name: String(parsed && parsed.name ? parsed.name : 'Imported Plan'),
+                            sections: plannerGroups,
+                        };
                         userRoutes.push(nr);
                         activeUserRouteId = nr.id;
+                    } else if (parsed && parsed.name) {
+                        userRoutes.find(r => r.id === activeUserRouteId).name = String(parsed.name);
                     }
                     savePlanner();
                     redrawMapOverlays();

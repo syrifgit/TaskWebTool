@@ -7,6 +7,7 @@ async function clearAppStorage(page) {
   await page.evaluate((routesKey) => {
     localStorage.removeItem('league_tasks_completed');
     localStorage.removeItem('league_planner_v1');
+    localStorage.removeItem('league_task_panel_width');
 
     // Force tests onto an editable empty user route instead of the default preset route.
     const routeId = 'test-route';
