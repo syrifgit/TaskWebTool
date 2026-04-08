@@ -87,6 +87,55 @@ function makePlannerGroup(name, items) {
     };
 }
 
+function normalizeExternalItem(raw) {
+    const custom = raw && raw.customItem ? raw.customItem : null;
+    const label = custom && typeof custom.label === 'string' ? custom.label.trim() : '';
+    const description = custom && typeof custom.description === 'string' ? custom.description.trim() : '';
+    const note = raw && typeof raw.note === 'string' ? raw.note.trim() : '';
+    const location = raw && raw.location ? raw.location : null;
+    const hasLocation = location &&
+        Number.isFinite(location.x) &&
+        Number.isFinite(location.y);
+
+    const comments = note
+        ? note.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+        : [];
+
+    return normalizePlannerItem({
+        id: (raw && raw.id) || (custom && custom.id) || genId(),
+        virtual: true,
+        customName: label || 'Unnamed step',
+        customDesc: description,
+        comments,
+        pinCoords: hasLocation
+            ? {
+                lat: Number(location.y),
+                lng: Number(location.x),
+            }
+            : null,
+    });
+}
+
+function normalizeExternalSections(parsed) {
+    if (!parsed || !Array.isArray(parsed.sections)) return null;
+    const hasCustomItems = parsed.sections.some(section =>
+        section && Array.isArray(section.items) && section.items.some(item => item && item.customItem)
+    );
+    if (!hasCustomItems) return null;
+
+    return parsed.sections.map(section => {
+        const sectionName = section && typeof section.name === 'string' ? section.name : DEFAULT_GROUP_NAME;
+        const sectionItems = Array.isArray(section && section.items) ? section.items : [];
+        return {
+            id: section && section.id ? String(section.id) : genId(),
+            name: sectionName,
+            collapsed: false,
+            showPins: true,
+            items: sectionItems.map(normalizeExternalItem),
+        };
+    });
+}
+
 function ensurePlannerGroups() {
     if (!Array.isArray(plannerGroups)) plannerGroups = [];
     plannerGroups = plannerGroups.map(g => ({
@@ -147,8 +196,8 @@ function applyPlanData(parsed) {
         // v1: bare array of items
         plannerGroups = [makePlannerGroup(DEFAULT_GROUP_NAME, parsed)];
     } else if (parsed && Array.isArray(parsed.sections)) {
-        // v3+: sections key
-        plannerGroups = parsed.sections;
+        // v3+: sections key (or external route format with customItem/location)
+        plannerGroups = normalizeExternalSections(parsed) || parsed.sections;
     } else if (parsed && Array.isArray(parsed.groups)) {
         // v2 backwards compat: groups key
         plannerGroups = parsed.groups;
