@@ -9,7 +9,7 @@ import { fetchJsonCached } from "../data/json-cache.js";
  * Completed-task tracking persists in localStorage and is shown on planner cards.
  */
 
-const TASKS_URL = 'https://raw.githubusercontent.com/syrifgit/full-task-scraper/refs/heads/main/generated/league-5-raging-echoes/LEAGUE_5.full.json';
+const TASKS_URL = 'https://raw.githubusercontent.com/syrifgit/OSRSTaskHub/refs/heads/main/leagues/league-5-raging-echoes/LEAGUE_5.full.json';
 const TASK_STRATEGY_URL = 'data_osrs/strategy.json';
 const STORAGE_KEY = 'league_tasks_completed';
 const TASK_PANEL_WIDTH_KEY = 'league_task_panel_width';
